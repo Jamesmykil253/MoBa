@@ -1,0 +1,40 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bd5b1250d2e7f41e09ed14611d0bd84b, type: 3}
+  m_Name: AbilityPrototype
+  m_EditorClassIdentifier: Assembly-CSharp::MOBA.AbilityPrototype
+  abilityName: 
+  description: 
+  icon: {fileID: 0}
+  abilityType: 0
+  baseDamage: 50
+  damageMultiplier: 1
+  damageType: 0
+  range: 5
+  areaOfEffect: 0
+  castTime: 0
+  cooldown: 5
+  duration: 0
+  castEffect: {fileID: 0}
+  impactEffect: {fileID: 0}
+  castSound: {fileID: 0}
+  impactSound: {fileID: 0}
+  isHoming: 0
+  projectileSpeed: 10
+  hitLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  canCrit: 1
+  critChanceBonus: 0
+  damagePerLevel: 10
+  rangePerLevel: 0.5
+  cooldownReductionPerLevel: 0.1
