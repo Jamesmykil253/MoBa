@@ -235,7 +235,11 @@ A: Ensure InputSystem_Actions asset exists and is properly configured in PlayerI
 ### Core Generator Scripts
 - `MOBASceneGenerator.cs`: Main generation logic
 - `MOBASceneGeneratorUsage.cs`: Quick access methods
-- `MOBAPrefabGenerator.cs`: Prefab creation utilities
+- `ComprehensiveNetworkPrefabCreator.cs`: Network prefab creation utilities
+- `ComprehensivePlayerPrefabCreator.cs`: Player prefab creation utilities
+- `ComprehensiveEnemyPrefabCreator.cs`: Enemy prefab creation utilities
+- `ComprehensiveGoalPrefabCreator.cs`: Goal prefab creation utilities
+- `ComprehensiveProjectilePrefabCreator.cs`: Projectile prefab creation utilities
 
 ### Helper Components
 - `TestTargetHealth.cs`: Simple damageable test object

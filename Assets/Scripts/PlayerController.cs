@@ -106,16 +106,24 @@ namespace MOBA
                 }
             }
 
-            // Find CommandManager
-            if (commandManager == null)
+            // Find CommandManager (only in play mode or if it exists)
+            if (commandManager == null && Application.isPlaying)
             {
                 commandManager = FindAnyObjectByType<CommandManager>();
+                if (commandManager == null)
+                {
+                    Debug.LogWarning("[PlayerController] CommandManager not found in scene. Commands will not work until one is available.");
+                }
             }
 
-            // Find AbilitySystem
-            if (abilitySystem == null)
+            // Find AbilitySystem (only in play mode or if it exists)
+            if (abilitySystem == null && Application.isPlaying)
             {
                 abilitySystem = FindAnyObjectByType<AbilitySystem>();
+                if (abilitySystem == null)
+                {
+                    Debug.LogWarning("[PlayerController] AbilitySystem not found in scene. Abilities will not work until one is available.");
+                }
             }
         }
 

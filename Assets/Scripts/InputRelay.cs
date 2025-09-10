@@ -54,17 +54,29 @@ namespace MOBA
             // Find dependencies if not assigned
             if (characterController == null)
             {
-                characterController = Object.FindAnyObjectByType<MOBACharacterController>();
+                characterController = GetComponent<MOBACharacterController>();
+                if (characterController == null && Application.isPlaying)
+                {
+                    characterController = Object.FindAnyObjectByType<MOBACharacterController>();
+                }
             }
 
-            if (commandManager == null)
+            if (commandManager == null && Application.isPlaying)
             {
                 commandManager = Object.FindAnyObjectByType<CommandManager>();
+                if (commandManager == null)
+                {
+                    Debug.LogWarning("[InputRelay] CommandManager not found in scene. Commands will not work until one is available.");
+                }
             }
 
-            if (abilitySystem == null)
+            if (abilitySystem == null && Application.isPlaying)
             {
                 abilitySystem = Object.FindAnyObjectByType<AbilitySystem>();
+                if (abilitySystem == null)
+                {
+                    Debug.LogWarning("[InputRelay] AbilitySystem not found in scene. Abilities will not work until one is available.");
+                }
             }
         }
 
