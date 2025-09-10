@@ -23,7 +23,7 @@
 Fight as iconic internet personalities like **Elom Nusk** and **DOGE** in satirical technopunk arenas. Each character brings unique abilities and viral personality to the battlefield.
 
 ### 🏃‍♂️ **3D Platformer Combat**
-Traditional MOBA meets Mario Bros! **Jump, double-jump, and wall-slide** your way to victory. Vertical positioning is just as important as horizontal strategy.
+Traditional MOBA meets Mario Bros! **Jump and double-jump** your way to victory. Vertical positioning is just as important as horizontal strategy.
 
 ### ⚡ **Lightning-Fast Matches**
 - **60 seconds:** Quick duels during coffee breaks
@@ -43,11 +43,10 @@ Collect crypto coins by defeating enemies and NPCs, then deposit them at your te
 ### 🏃‍♂️ **Movement & Combat**
 1. **Move** with WASD (PC) or virtual joystick (mobile)
 2. **Jump** and **double-jump** to reach high platforms and dodge attacks
-3. **Wall-slide** down surfaces for tactical repositioning
-4. **Attack** enemies with auto-targeting basic attacks
-5. **Use abilities** (Q, E, R) with manual aim for bonus damage
-6. **Collect coins** that drop from defeated enemies
-7. **Deposit coins** at scoring zones using the Interact button
+3. **Attack** enemies with auto-targeting basic attacks
+4. **Use abilities** (Q, E, R) with manual aim for bonus damage
+5. **Collect coins** that drop from defeated enemies
+6. **Deposit coins** at scoring zones using the Interact button
 
 ### 💡 **Strategy Tips**
 - **High ground advantage:** Jump to elevated positions for better positioning
@@ -102,26 +101,6 @@ Collect crypto coins by defeating enemies and NPCs, then deposit them at your te
 
 ---
 
-## 🏟️ Character Roster
-
-### 🚀 **Elom Nusk** - *The Tech Maverick*
-**Role:** Ranged DPS  
-**Abilities:**
-- **Rocket Barrage:** Launches multiple projectiles in a cone
-- **Neuralink:** Temporarily controls an enemy's movement
-- **Mars Colonization:** Ultimate - Creates a massive explosion zone
-
-### 🐕 **DOGE** - *The Crypto Canine*  
-**Role:** Agile Brawler  
-**Abilities:**
-- **Much Wow:** Speed boost with increased jump height
-- **To The Moon:** Launches skyward, crashing down for AoE damage  
-- **Diamond Hands:** Ultimate - Becomes temporarily invulnerable
-
-*More characters coming soon!*
-
----
-
 ## 🚀 Quick Start
 
 ### 📱 **Mobile Players**
@@ -145,50 +124,16 @@ Collect crypto coins by defeating enemies and NPCs, then deposit them at your te
 
 ---
 
-## 📱 Download & System Requirements
-
-### 📲 **Download Links**
-- **iOS:** App Store (Coming Soon)
-- **Android:** Google Play (Coming Soon)  
-- **PC:** Steam / Itch.io (Coming Soon)
-- **Console:** PlayStation / Xbox (Planned 2026)
-
-### 💻 **System Requirements**
-
-#### **Mobile** (Recommended)
-- **iOS:** iPhone 8+ / iPad Air 2+
-- **Android:** Android 8.0+, 3GB RAM, OpenGL ES 3.0
-- **Storage:** 500MB free space
-- **Network:** Stable internet connection required
-
-#### **PC** (Minimum)
-- **OS:** Windows 10 64-bit / macOS 10.15 / Ubuntu 18.04
-- **Processor:** Intel i5-4590 / AMD FX 8350
-- **Memory:** 4 GB RAM
-- **Graphics:** NVIDIA GTX 960 / AMD R9 280
-- **Storage:** 2 GB available space
-- **Network:** Broadband internet connection
-
----
-
 ## 🌐 Community & Support
 
 ### 💬 **Join the Community**
-- **Discord:** [MoBA Me Community](https://discord.gg/mobame) - Chat, find teammates, get updates
-- **Reddit:** [r/MoBAMe](https://reddit.com/r/mobame) - Strategies, highlights, feedback
-- **Twitter:** [@MoBAMeGame](https://twitter.com/mobamegame) - News and memes
-- **YouTube:** [MoBA Me Official](https://youtube.com/mobame) - Gameplay guides and highlights
-
-### 🛠️ **Support & Feedback**
-- **Bug Reports:** [GitHub Issues](https://github.com/Jamesmykil253/MoBa/issues)
-- **Feature Requests:** Community Discord #suggestions
-- **Technical Support:** support@mobame.com
-- **Business Inquiries:** business@mobame.com
+- **Discord:** Chat, find teammates, get updates
+- **Reddit:** Strategies, highlights, feedback
+- **YouTube:** Gameplay guides and highlights
 
 ### 📚 **Game Guides**
 - **Beginner's Guide:** Master the basics in 10 minutes
 - **Advanced Strategies:** Competitive tips and techniques  
-- **Character Guides:** Detailed ability breakdowns
 - **Map Strategies:** Positioning and objective control
 
 ---
@@ -260,25 +205,9 @@ Futuristic battle arenas inspired by tech company campuses, crypto mining facili
 
 ---
 
-## 📈 Development Roadmap
+---
 
-### 🚀 **Launch (Q4 2025)**
-- 2 characters (Elom Nusk, DOGE)
-- 3 game modes (1v1, 3v3, 5v5)
-- 4 arena maps
-- Mobile + PC release
-
-### 🎮 **Post-Launch (Q1 2026)**
-- 2 new characters every quarter
-- Ranked competitive mode
-- Spectator mode and replays
-- Console port (PlayStation/Xbox)
-
-### 🏆 **Year 2 (2026)**
-- 12+ character roster
-- Tournament mode and esports tools
-- Custom game modes
-- Map editor and community content
+## 🔧 Technical Excellence
 
 ---
 
@@ -291,8 +220,6 @@ Futuristic battle arenas inspired by tech company campuses, crypto mining facili
 *Where internet culture meets competitive gaming*
 
 ---
-
-**Follow us for updates:** [Discord](https://discord.gg/mobame) • [Twitter](https://twitter.com/mobamegame) • [Reddit](https://reddit.com/r/mobame)
 
 **Made with ❤️ and Unity 6**
 
