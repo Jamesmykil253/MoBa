@@ -30,6 +30,9 @@ namespace MOBA
 
         // Performance tracking
         private float lastUpdateTime;
+        private float lastFrameWarningTime;
+        private float lastMemoryWarningTime;
+        private float lastAllocationWarningTime;
         private FrameTiming[] frameTimings = new FrameTiming[1];
         private Dictionary<string, PerformanceMetric> metrics = new();
 
@@ -73,28 +76,30 @@ namespace MOBA
         {
             FrameTimingManager.CaptureFrameTimings();
             uint numFrames = FrameTimingManager.GetLatestTimings(1, frameTimings);
-
+            
             if (numFrames > 0)
             {
                 float frameTime = (float)frameTimings[0].cpuFrameTime;
                 metrics["FrameTime"].Update(frameTime);
 
-                if (frameTime > targetFrameTime * 1.5f)
+                // Only log warnings every 2 seconds to reduce spam
+                if (frameTime > targetFrameTime * 1.5f && Time.time - lastFrameWarningTime > 2.0f)
                 {
                     LogPerformanceWarning($"High frame time: {frameTime:F2}ms (target: {targetFrameTime}ms)");
+                    lastFrameWarningTime = Time.time;
                 }
             }
-        }
-
-        private void UpdateMemoryUsage()
+        }        private void UpdateMemoryUsage()
         {
             long currentMemory = UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong();
             float memoryMB = currentMemory / (1024f * 1024f);
             metrics["MemoryUsage"].Update(memoryMB);
 
-            if (memoryMB > targetMemoryMB)
+            // Only log memory warnings every 5 seconds to reduce spam
+            if (memoryMB > targetMemoryMB && Time.time - lastMemoryWarningTime > 5.0f)
             {
                 LogPerformanceWarning($"High memory usage: {memoryMB:F1}MB (target: {targetMemoryMB}MB)");
+                lastMemoryWarningTime = Time.time;
             }
 
             lastMemoryUsage = currentMemory;
@@ -108,9 +113,11 @@ namespace MOBA
             float allocationKB = allocatedThisFrame / 1024f;
             metrics["AllocationRate"].Update(allocationKB);
 
-            if (allocationKB > maxAllocationRate)
+            // Only log allocation warnings every 3 seconds to reduce spam
+            if (allocationKB > maxAllocationRate && Time.time - lastAllocationWarningTime > 3.0f)
             {
                 LogPerformanceWarning($"High allocation rate: {allocationKB:F1}KB/frame (target: {maxAllocationRate}KB/frame)");
+                lastAllocationWarningTime = Time.time;
             }
         }
 
@@ -137,10 +144,39 @@ namespace MOBA
 
         private void ProfileObjectPools()
         {
+            // Profile ProjectilePool - access the pool directly instead of using GetComponent
             var projectilePool = FindAnyObjectByType<ProjectilePool>();
             if (projectilePool != null)
             {
-                metrics["ProjectileCount"].Update(projectilePool.GetComponent<ObjectPool<Projectile>>()?.ActiveCount ?? 0);
+                // ProjectilePool should have a method to get active count
+                try
+                {
+                    // Use reflection to safely access the pool if needed
+                    var poolField = typeof(ProjectilePool).GetField("projectilePool", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    if (poolField != null)
+                    {
+                        var pool = poolField.GetValue(projectilePool);
+                        if (pool != null)
+                        {
+                            var activeCountProperty = pool.GetType().GetProperty("ActiveCount");
+                            if (activeCountProperty != null)
+                            {
+                                int activeCount = (int)activeCountProperty.GetValue(pool);
+                                metrics["ProjectileCount"].Update(activeCount);
+                            }
+                        }
+                    }
+                }
+                catch (System.Exception e)
+                {
+                    // Fallback - just update with 0 if we can't access the pool
+                    metrics["ProjectileCount"].Update(0);
+                    UnityEngine.Debug.LogWarning($"[PerformanceProfiler] Could not access ProjectilePool count: {e.Message}");
+                }
+            }
+            else
+            {
+                metrics["ProjectileCount"].Update(0);
             }
         }
 

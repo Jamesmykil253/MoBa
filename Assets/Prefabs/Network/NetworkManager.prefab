@@ -45,7 +45,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 593a2fe42fa9d37498c96f9a383b6521, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkManager
+  m_EditorClassIdentifier: 
   NetworkManagerExpanded: 0
   NetworkConfig:
     ProtocolVersion: 0
@@ -87,7 +87,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 6960e84d07fb87f47956e7a81d71c4e6, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.Transports.UTP.UnityTransport
+  m_EditorClassIdentifier: 
   m_ProtocolType: 0
   m_UseWebSockets: 0
   m_UseEncryption: 0
@@ -116,7 +116,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: def7c9440b66f4b5db3a5decfe2a0863, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::MOBA.Networking.NetworkGameManager
+  m_EditorClassIdentifier: 
   ShowTopMostFoldoutHeaderGroup: 1
   maxPlayers: 8
   gameSceneName: MOBA_TestScene

@@ -23,27 +23,55 @@ namespace MOBA.Networking
         private void Awake()
         {
             networkManager = NetworkManager.Singleton;
+            // Don't prewarm here - wait for manual initialization to avoid null prefab issues
+            UnityEngine.Debug.Log("[NetworkObjectPool] Awake() called - waiting for manual initialization");
+        }
+
+        /// <summary>
+        /// Initialize the pool manually after prefab assignment
+        /// </summary>
+        public void InitializePool()
+        {
+            UnityEngine.Debug.Log("[NetworkObjectPool] InitializePool() called - starting prewarming");
             PrewarmPool();
         }
 
         private void PrewarmPool()
         {
+            UnityEngine.Debug.Log($"[NetworkObjectPool] PrewarmPool() starting for prefab: {(prefab != null ? prefab.name : "NULL")} (target: {initialPoolSize} objects)");
+            
+            if (prefab == null)
+            {
+                UnityEngine.Debug.LogError("[NetworkObjectPool] ❌ Cannot prewarm pool - prefab is null!");
+                return;
+            }
+
             for (int i = 0; i < initialPoolSize; i++)
             {
+                UnityEngine.Debug.Log($"[NetworkObjectPool] Creating prewarm object {i + 1}/{initialPoolSize}");
                 CreateNewObject();
             }
 
-            UnityEngine.Debug.Log($"[NetworkObjectPool] Prewarmed pool with {initialPoolSize} objects for {prefab.name}");
+            UnityEngine.Debug.Log($"[NetworkObjectPool] ✅ Prewarmed pool with {initialPoolSize} objects for {prefab.name}");
         }
 
         private GameObject CreateNewObject()
         {
+            UnityEngine.Debug.Log($"[NetworkObjectPool] CreateNewObject() called for prefab: {(prefab != null ? prefab.name : "NULL")}");
+            
+            if (prefab == null)
+            {
+                UnityEngine.Debug.LogError("[NetworkObjectPool] ❌ Cannot create object - prefab is null!");
+                return null;
+            }
+
             if (availableObjects.Count + activeObjects.Count >= maxPoolSize && !autoExpand)
             {
                 UnityEngine.Debug.LogWarning($"[NetworkObjectPool] Pool limit reached for {prefab.name}");
                 return null;
             }
 
+            UnityEngine.Debug.Log($"[NetworkObjectPool] Instantiating object from prefab: {prefab.name}");
             GameObject obj = Instantiate(prefab, transform);
             obj.SetActive(false);
 
@@ -56,6 +84,7 @@ namespace MOBA.Networking
             }
 
             availableObjects.Enqueue(obj);
+            UnityEngine.Debug.Log($"[NetworkObjectPool] ✅ Successfully created object for {prefab.name}");
             return obj;
         }
 
@@ -157,6 +186,9 @@ namespace MOBA.Networking
 
             activeObjects.Clear();
 
+            // Store prefab name before clearing
+            string prefabName = prefab != null ? prefab.name : "Unknown";
+
             // Destroy all available objects
             foreach (var obj in availableObjects)
             {
@@ -168,7 +200,7 @@ namespace MOBA.Networking
 
             availableObjects.Clear();
 
-            UnityEngine.Debug.Log($"[NetworkObjectPool] Cleared pool for {prefab.name}");
+            UnityEngine.Debug.Log($"[NetworkObjectPool] Cleared pool for {prefabName}");
         }
 
         /// <summary>
@@ -181,8 +213,33 @@ namespace MOBA.Networking
                 CreateNewObject();
             }
 
-            UnityEngine.Debug.Log($"[NetworkObjectPool] Expanded pool by {count} objects for {prefab.name}");
+            string prefabName = prefab != null ? prefab.name : "Unknown";
+            UnityEngine.Debug.Log($"[NetworkObjectPool] Expanded pool by {count} objects for {prefabName}");
         }
+
+        /// <summary>
+        /// Assign a prefab to this pool
+        /// </summary>
+        public void AssignPrefab(GameObject newPrefab)
+        {
+            prefab = newPrefab;
+            UnityEngine.Debug.Log($"[NetworkObjectPool] Assigned prefab: {(prefab != null ? prefab.name : "NULL")}");
+        }
+
+        /// <summary>
+        /// Get the number of active objects in the pool
+        /// </summary>
+        public int ActiveCount => activeObjects.Count;
+
+        /// <summary>
+        /// Get the number of available objects in the pool
+        /// </summary>
+        public int AvailableCount => availableObjects.Count;
+
+        /// <summary>
+        /// Get the total number of objects in the pool
+        /// </summary>
+        public int TotalCount => ActiveCount + AvailableCount;
 
         private void OnDestroy()
         {
@@ -202,9 +259,17 @@ namespace MOBA.Networking
             {
                 if (_instance == null)
                 {
+                    UnityEngine.Debug.Log("[NetworkObjectPoolManager] Creating singleton instance...");
                     var go = new GameObject("NetworkObjectPoolManager");
                     _instance = go.AddComponent<NetworkObjectPoolManager>();
-                    DontDestroyOnLoad(go);
+                    
+                    // Only use DontDestroyOnLoad in play mode, not in editor
+                    if (Application.isPlaying)
+                    {
+                        DontDestroyOnLoad(go);
+                    }
+                    
+                    UnityEngine.Debug.Log($"[NetworkObjectPoolManager] ✅ Singleton created: {go.name}");
                 }
                 return _instance;
             }
@@ -214,12 +279,15 @@ namespace MOBA.Networking
 
         private void Awake()
         {
+            UnityEngine.Debug.Log("[NetworkObjectPoolManager] Awake() called");
             if (_instance != null && _instance != this)
             {
+                UnityEngine.Debug.Log("[NetworkObjectPoolManager] Destroying duplicate instance");
                 Destroy(gameObject);
                 return;
             }
             _instance = this;
+            UnityEngine.Debug.Log("[NetworkObjectPoolManager] ✅ Singleton instance established");
         }
 
         /// <summary>
@@ -227,23 +295,40 @@ namespace MOBA.Networking
         /// </summary>
         public void CreatePool(string poolName, GameObject prefab, int initialSize = 10, int maxSize = 50)
         {
-            if (pools.ContainsKey(poolName))
+            UnityEngine.Debug.Log($"[NetworkObjectPoolManager] CreatePool() called - Name: {poolName}, Prefab: {(prefab != null ? prefab.name : "NULL")}, Initial: {initialSize}, Max: {maxSize}");
+            
+            if (prefab == null)
             {
-                UnityEngine.Debug.LogWarning($"[NetworkObjectPoolManager] Pool {poolName} already exists");
+                UnityEngine.Debug.LogError($"[NetworkObjectPoolManager] ❌ Cannot create pool '{poolName}' - prefab is null!");
                 return;
             }
 
+            if (pools.ContainsKey(poolName))
+            {
+                UnityEngine.Debug.LogWarning($"[NetworkObjectPoolManager] Pool {poolName} already exists, skipping creation");
+                return;
+            }
+
+            UnityEngine.Debug.Log($"[NetworkObjectPoolManager] Creating pool GameObject: {poolName}_Pool");
             var poolObject = new GameObject($"{poolName}_Pool");
             poolObject.transform.SetParent(transform);
 
+            UnityEngine.Debug.Log($"[NetworkObjectPoolManager] Adding NetworkObjectPool component to {poolObject.name}");
             var pool = poolObject.AddComponent<NetworkObjectPool>();
+            
+            UnityEngine.Debug.Log($"[NetworkObjectPoolManager] Assigning prefab {prefab.name} to pool component");
             pool.prefab = prefab;
             pool.initialPoolSize = initialSize;
             pool.maxPoolSize = maxSize;
+            
+            UnityEngine.Debug.Log($"[NetworkObjectPoolManager] Manually initializing pool to avoid Awake timing issue");
+            pool.InitializePool();
 
             pools[poolName] = pool;
 
-            UnityEngine.Debug.Log($"[NetworkObjectPoolManager] Created pool {poolName} with {initialSize} objects");
+            pools[poolName] = pool;
+
+            UnityEngine.Debug.Log($"[NetworkObjectPoolManager] ✅ Created pool {poolName} with {initialSize} objects");
         }
 
         /// <summary>

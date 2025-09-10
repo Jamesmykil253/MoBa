@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 1653182785353049891}
   - component: {fileID: 3686802169881381982}
   - component: {fileID: 2360288249363365356}
-  - component: {fileID: 3180826991541334317}
+  - component: {fileID: 983182360121003396}
   m_Layer: 0
   m_Name: TestTarget
   m_TagString: Untagged
@@ -84,8 +84,6 @@ MeshRenderer:
   m_RayTracingAccelStructBuildFlagsOverride: 0
   m_RayTracingAccelStructBuildFlags: 1
   m_SmallMeshCulling: 1
-  m_ForceMeshLod: -1
-  m_MeshLodSelectionBias: 0
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
@@ -107,12 +105,11 @@ MeshRenderer:
   m_AutoUVMaxDistance: 0.5
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
-  m_GlobalIlluminationMeshLod: 0
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!114 &3180826991541334317
+--- !u!114 &983182360121003396
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -123,6 +120,6 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 0}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp-Editor::MOBA.Editor.HealthComponent
+  m_EditorClassIdentifier: 
   maxHealth: 100
   currentHealth: 100

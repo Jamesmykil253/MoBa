@@ -30,6 +30,8 @@ namespace MOBA
         private float lastCleanupTime;
         private float lastAssetUnloadTime;
         private float lastPoolCleanupTime;
+        private float lastMemoryWarningTime;
+        private float lastMonoWarningTime;
         private Dictionary<string, MemoryPool> memoryPools = new();
 
         // Asset references for cleanup
@@ -139,15 +141,17 @@ namespace MOBA
             float monoMB = monoMemory / (1024f * 1024f);
             float gfxMB = gfxMemory / (1024f * 1024f);
 
-            // Log warnings for high memory usage
-            if (totalMB > targetMemoryMB)
+            // Log warnings for high memory usage, but limit frequency to reduce spam
+            if (totalMB > targetMemoryMB && Time.time - lastMemoryWarningTime > 10.0f)
             {
                 Debug.LogWarning($"[MemoryManager] Total memory usage: {totalMB:F1}MB (target: {targetMemoryMB}MB)");
+                lastMemoryWarningTime = Time.time;
             }
 
-            if (monoMB > targetMemoryMB * 0.6f)
+            if (monoMB > targetMemoryMB * 0.6f && Time.time - lastMonoWarningTime > 10.0f)
             {
                 Debug.LogWarning($"[MemoryManager] Mono heap size: {monoMB:F1}MB");
+                lastMonoWarningTime = Time.time;
             }
         }
 

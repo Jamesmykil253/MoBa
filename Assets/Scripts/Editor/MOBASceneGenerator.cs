@@ -112,8 +112,9 @@ namespace MOBA.Editor
         private GameObject CreateSceneRoot()
         {
             GameObject sceneRoot = new GameObject(sceneSetupName);
-            sceneRoot.AddComponent<MOBASceneSetup>();
-            sceneRoot.AddComponent<MOBATestScene>();
+            // Use modern MOBASceneInstantiator instead of old setup classes
+            // sceneRoot.AddComponent<MOBASceneInstantiator>(); // Removed - use MOBASceneInstantiator
+            // sceneRoot.AddComponent<// MOBATestScene (removed)>(); // Removed - use MOBASceneInstantiator
 
             Debug.Log("[MOBASceneGenerator] Created scene root with setup components");
             return sceneRoot;
@@ -133,8 +134,8 @@ namespace MOBA.Editor
             // Create NetworkSystemIntegration
             CreateNetworkSystemIntegration();
 
-            // Create NetworkTestSetup
-            CreateNetworkTestSetup();
+            // REMOVED - // NetworkTestSetup (integrated into MOBASceneInstantiator) functionality integrated into MOBASceneInstantiator
+            // Create// NetworkTestSetup (integrated into MOBASceneInstantiator)();
 
             Debug.Log("[MOBASceneGenerator] Network systems created");
         }
@@ -170,14 +171,17 @@ namespace MOBA.Editor
             return integration;
         }
 
-        private GameObject CreateNetworkTestSetup()
+        // REMOVED - // NetworkTestSetup (integrated into MOBASceneInstantiator) functionality integrated into MOBASceneInstantiator
+        /*
+        private GameObject Create// NetworkTestSetup (integrated into MOBASceneInstantiator)()
         {
-            GameObject testSetup = new GameObject("NetworkTestSetup");
-            testSetup.AddComponent<NetworkTestSetup>();
+            GameObject testSetup = new GameObject("// NetworkTestSetup (integrated into MOBASceneInstantiator)");
+            testSetup.AddComponent<// NetworkTestSetup (integrated into MOBASceneInstantiator)>();
 
-            Debug.Log("[MOBASceneGenerator] NetworkTestSetup created");
+            Debug.Log("[MOBASceneGenerator] // NetworkTestSetup (integrated into MOBASceneInstantiator) created");
             return testSetup;
         }
+        */
 
         #endregion
 
@@ -448,8 +452,8 @@ namespace MOBA.Editor
             rectTransform.offsetMin = Vector2.zero;
             rectTransform.offsetMax = Vector2.zero;
 
-            // Add NetworkTestSetup component
-            networkUI.AddComponent<NetworkTestSetup>();
+            // REMOVED - // NetworkTestSetup (integrated into MOBASceneInstantiator) functionality integrated into MOBASceneInstantiator
+            // networkUI.AddComponent<// NetworkTestSetup (integrated into MOBASceneInstantiator)>();
 
             // Create network control buttons
             CreateNetworkButtons(networkUI);
@@ -578,8 +582,8 @@ namespace MOBA.Editor
             target.transform.position = new Vector3(5f, 1f, 0f);
             target.transform.localScale = new Vector3(1f, 2f, 1f);
 
-            // Add health component - use the TestDamageable class from MOBA namespace
-            var healthComponent = target.AddComponent<TestDamageable>();
+            // Add health component - use the HealthComponent class from MOBA namespace
+            var healthComponent = target.AddComponent<HealthComponent>();
 
             // Set material
             var renderer = target.GetComponent<Renderer>();
@@ -674,7 +678,8 @@ namespace MOBA.Editor
             player.AddComponent<MOBACharacterController>();
             player.AddComponent<InputRelay>();
             player.AddComponent<StateMachineIntegration>();
-            player.AddComponent<MOBATestScene>();
+            // REMOVED - // MOBATestScene (removed) functionality integrated into MOBASceneInstantiator
+            // player.AddComponent<// MOBATestScene (removed)>();
 
             // Visual representation
             CreatePlayerVisual(player);
@@ -786,19 +791,22 @@ namespace MOBA.Editor
                 Debug.Log("[MOBASceneGenerator] ProjectilePool -> FlyweightFactory reference configured");
             }
 
-            // Configure NetworkTestSetup UI references
-            var networkTestSetup = FindFirstObjectByType<NetworkTestSetup>();
+            // REMOVED - // NetworkTestSetup (integrated into MOBASceneInstantiator) and // MOBATestScene (removed) functionality integrated into MOBASceneInstantiator
+            /*
+            // Configure // NetworkTestSetup (integrated into MOBASceneInstantiator) UI references
+            var networkTestSetup = FindFirstObjectByType<// NetworkTestSetup (integrated into MOBASceneInstantiator)>();
             if (networkTestSetup != null)
             {
-                ConfigureNetworkTestSetupReferences(networkTestSetup);
+                Configure// NetworkTestSetup (integrated into MOBASceneInstantiator)References(networkTestSetup);
             }
 
-            // Configure MOBATestScene UI references
-            var testScene = FindFirstObjectByType<MOBATestScene>();
+            // Configure // MOBATestScene (removed) UI references
+            var testScene = FindFirstObjectByType<// MOBATestScene (removed)>();
             if (testScene != null)
             {
-                ConfigureMOBATestSceneReferences(testScene);
+                Configure// MOBATestScene (removed)References(testScene);
             }
+            */
 
             // Configure Camera references
             var cameraController = FindFirstObjectByType<MOBACameraController>();
@@ -817,7 +825,9 @@ namespace MOBA.Editor
             Debug.Log("[MOBASceneGenerator] Auto-configuration completed");
         }
 
-        private void ConfigureNetworkTestSetupReferences(NetworkTestSetup networkTestSetup)
+        // REMOVED - // NetworkTestSetup (integrated into MOBASceneInstantiator) class deleted, functionality integrated into MOBASceneInstantiator
+        /*
+        private void Configure// NetworkTestSetup (integrated into MOBASceneInstantiator)References(// NetworkTestSetup (integrated into MOBASceneInstantiator) networkTestSetup)
         {
             // Find UI elements by name and assign them
             var hostButton = GameObject.Find("HostButton")?.GetComponent<UnityEngine.UI.Button>();
@@ -827,7 +837,7 @@ namespace MOBA.Editor
             var statusText = GameObject.Find("NetworkStatusText")?.GetComponent<TextMeshProUGUI>();
 
             // Use reflection to set private fields (for demo purposes)
-            var networkTestSetupType = typeof(NetworkTestSetup);
+            var networkTestSetupType = typeof(// NetworkTestSetup (integrated into MOBASceneInstantiator));
             
             if (hostButton != null)
             {
@@ -859,12 +869,15 @@ namespace MOBA.Editor
                 statusTextField?.SetValue(networkTestSetup, statusText);
             }
 
-            Debug.Log("[MOBASceneGenerator] NetworkTestSetup UI references configured");
+            Debug.Log("[MOBASceneGenerator] // NetworkTestSetup (integrated into MOBASceneInstantiator) UI references configured");
         }
+        */
 
-        private void ConfigureMOBATestSceneReferences(MOBATestScene testScene)
+        // REMOVED - // MOBATestScene (removed) class deleted, functionality integrated into MOBASceneInstantiator
+        /*
+        private void Configure// MOBATestScene (removed)References(// MOBATestScene (removed) testScene)
         {
-            // Find UI elements and assign them to MOBATestScene
+            // Find UI elements and assign them to // MOBATestScene (removed)
             var statusText = GameObject.Find("StatusDisplay")?.GetComponent<TextMeshProUGUI>();
             var controlsText = GameObject.Find("ControlsDisplay")?.GetComponent<TextMeshProUGUI>();
             var debugText = GameObject.Find("DebugDisplay")?.GetComponent<TextMeshProUGUI>();
@@ -873,8 +886,9 @@ namespace MOBA.Editor
             if (controlsText != null) testScene.controlsText = controlsText;
             if (debugText != null) testScene.debugText = debugText;
 
-            Debug.Log("[MOBASceneGenerator] MOBATestScene UI references configured");
+            Debug.Log("[MOBASceneGenerator] // MOBATestScene (removed) UI references configured");
         }
+        */
 
         #endregion
     }

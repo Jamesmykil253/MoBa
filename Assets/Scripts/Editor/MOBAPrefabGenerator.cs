@@ -63,8 +63,9 @@ namespace MOBA.Editor
             if (GUILayout.Button("Network Projectile Prefab"))
                 CreateNetworkProjectilePrefab();
 
-            if (GUILayout.Button("MOBA Scene Setup Prefab"))
-                CreateMOBASceneSetupPrefab();
+            // REMOVED - MOBASceneInstantiator functionality integrated into MOBASceneInstantiator
+            // if (GUILayout.Button("MOBA Scene Setup Prefab"))
+            //     CreateMOBASceneInstantiatorPrefab();
 
             if (GUILayout.Button("UI Canvas Prefab"))
                 CreateUICanvasPrefab();
@@ -502,8 +503,8 @@ namespace MOBA.Editor
             rectTransform.offsetMin = Vector2.zero;
             rectTransform.offsetMax = Vector2.zero;
 
-            // Add NetworkTestSetup component
-            testUI.AddComponent<NetworkTestSetup>();
+            // Add // NetworkTestSetup (integrated into MOBASceneInstantiator) component - REMOVED (functionality integrated into MOBASceneInstantiator)
+            // testUI.AddComponent<// NetworkTestSetup (integrated into MOBASceneInstantiator)>();
 
             // Create network buttons
             CreateNetworkButtonsUI(testUI);
@@ -625,23 +626,25 @@ namespace MOBA.Editor
 
         #endregion
 
-        #region Scene Setup Prefab
+        #region Scene Setup Prefab - REMOVED (functionality integrated into MOBASceneInstantiator)
 
-        private void CreateMOBASceneSetupPrefab()
+        /*
+        private void CreateMOBASceneInstantiatorPrefab()
         {
-            string prefabPath = prefabsPath + "MOBASceneSetup.prefab";
+            string prefabPath = prefabsPath + "MOBASceneInstantiator.prefab";
             if (!overwriteExisting && AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath) != null)
             {
-                Debug.Log($"[MOBAPrefabGenerator] MOBASceneSetup prefab already exists, skipping...");
+                Debug.Log($"[MOBAPrefabGenerator] MOBASceneInstantiator prefab already exists, skipping...");
                 return;
             }
 
-            GameObject sceneSetup = new GameObject("MOBASceneSetup");
-            sceneSetup.AddComponent<MOBASceneSetup>();
+            GameObject sceneSetup = new GameObject("MOBASceneInstantiator");
+            sceneSetup.AddComponent<MOBASceneInstantiator>();
 
             SavePrefab(sceneSetup, prefabPath);
-            Debug.Log($"[MOBAPrefabGenerator] Created MOBASceneSetup prefab at {prefabPath}");
+            Debug.Log($"[MOBAPrefabGenerator] Created MOBASceneInstantiator prefab at {prefabPath}");
         }
+        */
 
         #endregion
 

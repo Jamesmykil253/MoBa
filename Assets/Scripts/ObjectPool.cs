@@ -87,10 +87,25 @@ namespace MOBA
         /// <returns>Newly created object</returns>
         private T CreateNewObject()
         {
-            // Removed automatic Object.Instantiate to prevent automatic loading
-            // Use CreateObjectWithInstance() method with manually provided instance instead
-            Debug.LogError("[ObjectPool] Automatic instantiation disabled - use CreateObjectWithInstance() instead");
-            return null;
+            // Create new instance from the prefab
+            if (prefab == null)
+            {
+                Debug.LogError("[ObjectPool] Prefab is null, cannot create new object");
+                return null;
+            }
+
+            GameObject newObj = Object.Instantiate(prefab.gameObject, parent);
+            T component = newObj.GetComponent<T>();
+            
+            if (component == null)
+            {
+                Debug.LogError($"[ObjectPool] Prefab object {prefab.gameObject.name} does not have component {typeof(T).Name}");
+                Object.Destroy(newObj);
+                return null;
+            }
+
+            allObjects.Add(component);
+            return component;
         }
 
         /// <summary>

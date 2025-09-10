@@ -1,6 +1,7 @@
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using System.Collections.Generic;
 
 namespace MOBA.Networking
 {
@@ -10,14 +11,12 @@ namespace MOBA.Networking
     /// </summary>
     public class NetworkSystemIntegration : MonoBehaviour
     {
-        [Header("Core Network Components")]
-        [SerializeField] private NetworkManager networkManager;
-        [SerializeField] private NetworkGameManager gameManager;
-        [SerializeField] private NetworkTestSetup testSetup;
-
-        [Header("System Managers")]
+    [Header("Core Network Components")]
+    [SerializeField] private NetworkManager networkManager;
+    [SerializeField] private NetworkGameManager gameManager;        [Header("System Managers")]
         [SerializeField] private NetworkEventBus eventBus;
         [SerializeField] private NetworkObjectPoolManager poolManager;
+        [SerializeField] private NetworkPoolObjectManager componentPoolManager;
         [SerializeField] private LagCompensationManager lagManager;
         [SerializeField] private AntiCheatSystem antiCheat;
         [SerializeField] private NetworkProfiler profiler;
@@ -34,68 +33,144 @@ namespace MOBA.Networking
 
         private void Awake()
         {
+            UnityEngine.Debug.Log("[NetworkSystemIntegration] Awake() - Starting component initialization");
             InitializeNetworkSystems();
         }
 
         private void InitializeNetworkSystems()
         {
-            UnityEngine.Debug.Log("[NetworkSystemIntegration] Initializing production networking systems...");
+            UnityEngine.Debug.Log("[NetworkSystemIntegration] === STARTING NETWORK SYSTEM INITIALIZATION ===");
+            
+            // Log initial state
+            UnityEngine.Debug.Log($"[NetworkSystemIntegration] Initial prefab state - Player: {(playerPrefab != null ? playerPrefab.name : "NULL")}, Projectile: {(projectilePrefab != null ? projectilePrefab.name : "NULL")}");
+            UnityEngine.Debug.Log($"[NetworkSystemIntegration] Configuration - MaxPlayers: {maxPlayers}, AntiCheat: {enableAntiCheat}, LagComp: {enableLagCompensation}, Profiling: {enableProfiling}");
 
             // 1. Initialize Network Manager
+            UnityEngine.Debug.Log("[NetworkSystemIntegration] Step 1: Initializing Network Manager...");
             if (networkManager == null)
             {
                 networkManager = NetworkManager.Singleton;
                 if (networkManager == null)
                 {
-                    UnityEngine.Debug.LogError("[NetworkSystemIntegration] NetworkManager not found!");
+                    UnityEngine.Debug.LogError("[NetworkSystemIntegration] ❌ NetworkManager not found!");
                     return;
                 }
+                UnityEngine.Debug.Log("[NetworkSystemIntegration] ✅ NetworkManager found via Singleton");
+            }
+            else
+            {
+                UnityEngine.Debug.Log("[NetworkSystemIntegration] ✅ NetworkManager already assigned");
             }
 
             // 2. Initialize Event Bus (Observer Pattern)
+            UnityEngine.Debug.Log("[NetworkSystemIntegration] Step 2: Initializing Event Bus...");
             if (eventBus == null)
             {
                 eventBus = NetworkEventBus.Instance;
+                UnityEngine.Debug.Log("[NetworkSystemIntegration] ✅ Event Bus initialized via Instance");
+            }
+            else
+            {
+                UnityEngine.Debug.Log("[NetworkSystemIntegration] ✅ Event Bus already assigned");
             }
 
             // 3. Initialize Object Pool Manager (Object Pool Pattern)
-            if (poolManager == null)
+            UnityEngine.Debug.Log("[NetworkSystemIntegration] Step 3: Initializing Object Pool Manager...");
+            
+            // Try component-based manager first, then fallback to singleton
+            if (componentPoolManager != null)
             {
+                UnityEngine.Debug.Log($"[NetworkSystemIntegration] ✅ Using assigned component-based pool manager: {componentPoolManager.gameObject.name}");
+            }
+            else if (poolManager == null)
+            {
+                UnityEngine.Debug.Log("[NetworkSystemIntegration] Accessing NetworkObjectPoolManager.Instance to create singleton...");
                 poolManager = NetworkObjectPoolManager.Instance;
+                
+                if (poolManager != null)
+                {
+                    UnityEngine.Debug.Log($"[NetworkSystemIntegration] ✅ Object Pool Manager initialized via Instance: {poolManager.gameObject.name}");
+                }
+                else
+                {
+                    UnityEngine.Debug.LogError("[NetworkSystemIntegration] ❌ Failed to create NetworkObjectPoolManager instance!");
+                }
+            }
+            else
+            {
+                UnityEngine.Debug.Log($"[NetworkSystemIntegration] ✅ Object Pool Manager already assigned: {poolManager.gameObject.name}");
             }
 
             // 4. Initialize Lag Compensation Manager
+            UnityEngine.Debug.Log($"[NetworkSystemIntegration] Step 4: Initializing Lag Compensation Manager (enabled: {enableLagCompensation})...");
             if (lagManager == null && enableLagCompensation)
             {
                 lagManager = LagCompensationManager.Instance;
+                UnityEngine.Debug.Log("[NetworkSystemIntegration] ✅ Lag Compensation Manager initialized");
+            }
+            else if (!enableLagCompensation)
+            {
+                UnityEngine.Debug.Log("[NetworkSystemIntegration] ⚠️ Lag Compensation disabled");
+            }
+            else
+            {
+                UnityEngine.Debug.Log("[NetworkSystemIntegration] ✅ Lag Compensation Manager already assigned");
             }
 
             // 5. Initialize Anti-Cheat System
+            UnityEngine.Debug.Log($"[NetworkSystemIntegration] Step 5: Initializing Anti-Cheat System (enabled: {enableAntiCheat})...");
             if (antiCheat == null && enableAntiCheat)
             {
                 antiCheat = AntiCheatSystem.Instance;
+                UnityEngine.Debug.Log("[NetworkSystemIntegration] ✅ Anti-Cheat System initialized");
+            }
+            else if (!enableAntiCheat)
+            {
+                UnityEngine.Debug.Log("[NetworkSystemIntegration] ⚠️ Anti-Cheat disabled");
+            }
+            else
+            {
+                UnityEngine.Debug.Log("[NetworkSystemIntegration] ✅ Anti-Cheat System already assigned");
             }
 
             // 6. Initialize Network Profiler
+            UnityEngine.Debug.Log($"[NetworkSystemIntegration] Step 6: Initializing Network Profiler (enabled: {enableProfiling})...");
             if (profiler == null && enableProfiling)
             {
                 profiler = gameObject.AddComponent<NetworkProfiler>();
+                UnityEngine.Debug.Log("[NetworkSystemIntegration] ✅ Network Profiler component added");
+            }
+            else if (!enableProfiling)
+            {
+                UnityEngine.Debug.Log("[NetworkSystemIntegration] ⚠️ Network Profiling disabled");
+            }
+            else
+            {
+                UnityEngine.Debug.Log("[NetworkSystemIntegration] ✅ Network Profiler already assigned");
             }
 
             // 7. Configure Network Manager
+            UnityEngine.Debug.Log("[NetworkSystemIntegration] Step 7: Configuring Network Manager...");
             ConfigureNetworkManager();
 
             // 8. Set up object pools
+            UnityEngine.Debug.Log("[NetworkSystemIntegration] Step 8: Setting up Object Pools...");
             SetupObjectPools();
 
-            UnityEngine.Debug.Log("[NetworkSystemIntegration] All networking systems initialized successfully");
+            UnityEngine.Debug.Log("[NetworkSystemIntegration] === NETWORK SYSTEM INITIALIZATION COMPLETE ===");
         }
 
         private void ConfigureNetworkManager()
         {
-            if (networkManager == null) return;
+            UnityEngine.Debug.Log("[NetworkSystemIntegration] Configuring Network Manager...");
+            if (networkManager == null) 
+            {
+                UnityEngine.Debug.LogError("[NetworkSystemIntegration] ❌ Cannot configure NetworkManager - it's null!");
+                return;
+            }
 
             // Configure network settings
+            UnityEngine.Debug.Log($"[NetworkSystemIntegration] Setting PlayerPrefab: {(playerPrefab != null ? playerPrefab.name : "NULL")}");
             networkManager.NetworkConfig.PlayerPrefab = playerPrefab;
             networkManager.NetworkConfig.EnableSceneManagement = false;
             networkManager.NetworkConfig.TickRate = 60;
@@ -108,23 +183,72 @@ namespace MOBA.Networking
             networkManager.OnClientConnectedCallback += OnClientConnected;
             networkManager.OnClientDisconnectCallback += OnClientDisconnected;
 
-            UnityEngine.Debug.Log("[NetworkSystemIntegration] NetworkManager configured");
+            UnityEngine.Debug.Log("[NetworkSystemIntegration] ✅ NetworkManager configuration complete");
         }
 
         private void SetupObjectPools()
         {
-            if (poolManager == null || projectilePrefab == null) return;
-
-            // Create projectile pool
-            poolManager.CreatePool("Projectiles", projectilePrefab, 20, 100);
-
-            // Create player pool if needed
-            if (playerPrefab != null)
+            UnityEngine.Debug.Log("[NetworkSystemIntegration] Starting object pool setup...");
+            
+            // Determine which pool manager to use
+            bool usingComponentManager = componentPoolManager != null;
+            bool hasPoolManager = poolManager != null || componentPoolManager != null;
+            
+            UnityEngine.Debug.Log($"[NetworkSystemIntegration] Pool Manager status - Component: {(componentPoolManager != null ? "AVAILABLE" : "NULL")}, Singleton: {(poolManager != null ? "AVAILABLE" : "NULL")}");
+            UnityEngine.Debug.Log($"[NetworkSystemIntegration] Using: {(usingComponentManager ? "Component-based manager" : "Singleton manager")}");
+            UnityEngine.Debug.Log($"[NetworkSystemIntegration] Prefab status - Projectile: {(projectilePrefab != null ? projectilePrefab.name : "NULL")}, Player: {(playerPrefab != null ? playerPrefab.name : "NULL")}");
+            
+            if (!hasPoolManager) 
             {
-                poolManager.CreatePool("Players", playerPrefab, maxPlayers, maxPlayers);
+                UnityEngine.Debug.LogError("[NetworkSystemIntegration] ❌ No pool manager available, skipping object pool setup");
+                return;
             }
 
-            UnityEngine.Debug.Log("[NetworkSystemIntegration] Object pools created");
+            // Create projectile pool only if prefab is assigned
+            UnityEngine.Debug.Log("[NetworkSystemIntegration] Creating projectile pool...");
+            if (projectilePrefab != null)
+            {
+                UnityEngine.Debug.Log($"[NetworkSystemIntegration] Creating pool for projectile: {projectilePrefab.name} (20 initial, 100 max)");
+                
+                if (usingComponentManager)
+                {
+                    componentPoolManager.CreatePool("Projectiles", projectilePrefab, 20, 100);
+                }
+                else
+                {
+                    poolManager.CreatePool("Projectiles", projectilePrefab, 20, 100);
+                }
+                
+                UnityEngine.Debug.Log("[NetworkSystemIntegration] ✅ Projectile pool created successfully");
+            }
+            else
+            {
+                UnityEngine.Debug.LogError("[NetworkSystemIntegration] ❌ ProjectilePrefab is null, skipping projectile pool creation");
+            }
+
+            // Create player pool only if prefab is assigned
+            UnityEngine.Debug.Log("[NetworkSystemIntegration] Creating player pool...");
+            if (playerPrefab != null)
+            {
+                UnityEngine.Debug.Log($"[NetworkSystemIntegration] Creating pool for player: {playerPrefab.name} ({maxPlayers} initial, {maxPlayers} max)");
+                
+                if (usingComponentManager)
+                {
+                    componentPoolManager.CreatePool("Players", playerPrefab, maxPlayers, maxPlayers);
+                }
+                else
+                {
+                    poolManager.CreatePool("Players", playerPrefab, maxPlayers, maxPlayers);
+                }
+                
+                UnityEngine.Debug.Log("[NetworkSystemIntegration] ✅ Player pool created successfully");
+            }
+            else
+            {
+                UnityEngine.Debug.LogError("[NetworkSystemIntegration] ❌ PlayerPrefab is null, skipping player pool creation");
+            }
+
+            UnityEngine.Debug.Log("[NetworkSystemIntegration] ✅ Object pool setup completed");
         }
 
         private void OnConnectionApproval(NetworkManager.ConnectionApprovalRequest request, NetworkManager.ConnectionApprovalResponse response)
@@ -200,6 +324,17 @@ namespace MOBA.Networking
         /// </summary>
         public NetworkSystemStatus GetSystemStatus()
         {
+            // Get pool stats from whichever manager is available
+            Dictionary<string, (int, int, int)> poolStats = new Dictionary<string, (int, int, int)>();
+            if (componentPoolManager != null)
+            {
+                poolStats = componentPoolManager.GetPoolStats();
+            }
+            else if (poolManager != null)
+            {
+                poolStats = poolManager.GetAllPoolStats();
+            }
+            
             return new NetworkSystemStatus
             {
                 isNetworkManagerActive = networkManager != null && networkManager.IsListening,
@@ -210,7 +345,7 @@ namespace MOBA.Networking
                 antiCheatEnabled = enableAntiCheat && antiCheat != null,
                 lagCompensationEnabled = enableLagCompensation && lagManager != null,
                 profilingEnabled = enableProfiling && profiler != null,
-                poolStats = poolManager?.GetAllPoolStats() ?? new System.Collections.Generic.Dictionary<string, (int, int, int)>(),
+                poolStats = poolStats,
                 eventBusActive = eventBus != null
             };
         }

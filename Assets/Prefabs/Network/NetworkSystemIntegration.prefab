@@ -43,12 +43,12 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 47cc1c8187ccd47f0a23418e49759a59, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::MOBA.Networking.NetworkSystemIntegration
+  m_EditorClassIdentifier: 
   networkManager: {fileID: 0}
   gameManager: {fileID: 0}
-  testSetup: {fileID: 0}
   eventBus: {fileID: 0}
   poolManager: {fileID: 0}
+  componentPoolManager: {fileID: 0}
   lagManager: {fileID: 0}
   antiCheat: {fileID: 0}
   profiler: {fileID: 0}

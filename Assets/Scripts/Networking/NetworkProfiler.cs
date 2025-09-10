@@ -106,7 +106,7 @@ namespace MOBA.Networking
 
         private void Update()
         {
-            if (!enableProfiling || !networkManager.IsListening) return;
+            if (!enableProfiling || networkManager == null || !networkManager.IsListening) return;
 
             // Update counters
             UpdateCounters();
@@ -315,7 +315,7 @@ namespace MOBA.Networking
         // Debug GUI
         private void OnGUI()
         {
-            if (!enableProfiling || !Application.isEditor) return;
+            if (!enableProfiling || !Application.isEditor || networkManager == null) return;
 
             GUILayout.BeginArea(new Rect(10, Screen.height - 210, 400, 200));
             GUILayout.Label("Network Profiler", GUILayout.Width(380));
