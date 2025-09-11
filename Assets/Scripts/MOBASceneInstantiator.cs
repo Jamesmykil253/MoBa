@@ -469,15 +469,21 @@ namespace MOBA
                 yield break;
             }
             
-            var inputSystemActions = new InputSystem_Actions();
-            if (inputSystemActions?.asset != null)
-            {
-                playerInput.actions = inputSystemActions.asset;
-            }
-            else
-            {
-                Debug.LogWarning("[MOBASceneInstantiator] InputSystem_Actions asset is null, input may not work properly");
-            }
+            // Replace 'PlayerInputActions' with the actual name of your Input Actions asset class
+            #if ENABLE_INPUT_SYSTEM && STARTER_ASSETS_PACKAGES_CHECKED
+                        // Replace 'YourInputActionsClass' with the actual generated class name from your Input Actions asset
+                        var inputActionsAsset = Resources.Load<UnityEngine.InputSystem.InputActionAsset>("InputActions/YourInputActionsAsset");
+                        if (inputActionsAsset != null)
+                        {
+                            playerInput.actions = inputActionsAsset;
+                        }
+                        else
+                        {
+                            Debug.LogWarning("[MOBASceneInstantiator] InputActions asset is missing or not assigned. Please assign your Input Actions asset in Resources/InputActions/YourInputActionsAsset.");
+                        }
+            #else
+                        Debug.LogWarning("[MOBASceneInstantiator] Input System package or Input Actions asset not found. Please ensure you have generated your Input Actions C# class or assigned the InputActionAsset.");
+            #endif
 
             // Create visual representation
             var visualObj = GameObject.CreatePrimitive(PrimitiveType.Capsule);

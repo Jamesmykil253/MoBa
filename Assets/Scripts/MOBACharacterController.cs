@@ -41,36 +41,84 @@ namespace MOBA
 
         private void Update()
         {
-            // Update ground detection with improved logic
-            RaycastHit hit;
-            float raycastDistance = 1.2f; // Increased from 1.1f for better detection
-            Vector3 raycastOrigin = transform.position + Vector3.up * 0.1f; // Start slightly above to avoid self-collision
+            // Improved ground detection based on Clean Code principles
+            UpdateGroundDetection();
 
-            // Try to detect ground with multiple methods
-            bool groundDetected = false;
-
-            // Method 1: Raycast with Ground layer
-            if (Physics.Raycast(raycastOrigin, Vector3.down, out hit, raycastDistance, LayerMask.GetMask("Ground")))
-            {
-                groundDetected = true;
-            }
-            // Method 2: Fallback to default layer if Ground layer fails
-            else if (Physics.Raycast(raycastOrigin, Vector3.down, out hit, raycastDistance))
-            {
-                // Check if we hit something that could be ground (not the player itself)
-                if (hit.collider != null && hit.collider.gameObject != gameObject)
-                {
-                    groundDetected = true;
-                }
-            }
-
-            isGrounded = groundDetected;
-
-            // Debug ground detection
+            // Debug ground detection (following Clean Code - remove debug in production)
             if (Time.frameCount % 60 == 0) // Log every second
             {
-                Debug.Log($"[MOBACharacterController] Ground detection: isGrounded={isGrounded}, Position={transform.position:F2}, Hit distance={hit.distance:F2}");
+                Debug.Log($"[MOBACharacterController] Ground detection: isGrounded={isGrounded}, Position={transform.position:F2}");
             }
+        }
+
+        /// <summary>
+        /// Reliable ground detection with proper layer filtering and slope handling
+        /// Based on Clean Code single responsibility principle
+        /// </summary>
+        private void UpdateGroundDetection()
+        {
+            // Define raycast parameters with clear constants (no magic numbers)
+            const float RAY_DISTANCE = 1.2f;
+            const float RAY_START_OFFSET = 0.1f;
+            const string GROUND_LAYER = "Ground";
+            const string DEFAULT_LAYER = "Default";
+
+            Vector3 raycastOrigin = transform.position + Vector3.up * RAY_START_OFFSET;
+            RaycastHit hit;
+
+            // Primary detection: Use Ground layer if available
+            int groundLayerMask = LayerMask.GetMask(GROUND_LAYER);
+            if (groundLayerMask != 0 && Physics.Raycast(raycastOrigin, Vector3.down, out hit, RAY_DISTANCE, groundLayerMask))
+            {
+                isGrounded = IsValidGroundHit(hit);
+                return;
+            }
+
+            // Secondary detection: Use Default layer but exclude self
+            int defaultLayerMask = LayerMask.GetMask(DEFAULT_LAYER);
+            if (Physics.Raycast(raycastOrigin, Vector3.down, out hit, RAY_DISTANCE, defaultLayerMask))
+            {
+                isGrounded = IsValidGroundHit(hit) && !IsHittingSelf(hit);
+                return;
+            }
+
+            // Fallback: Use all layers but exclude self and player layers
+            int excludeLayers = LayerMask.GetMask("Player", "Projectile", "UI");
+            int allLayersExcludePlayer = ~excludeLayers;
+            
+            if (Physics.Raycast(raycastOrigin, Vector3.down, out hit, RAY_DISTANCE, allLayersExcludePlayer))
+            {
+                isGrounded = IsValidGroundHit(hit) && !IsHittingSelf(hit);
+                return;
+            }
+
+            // No ground detected
+            isGrounded = false;
+        }
+
+        /// <summary>
+        /// Validate if the raycast hit represents valid ground
+        /// Handles slopes and prevents false positives
+        /// </summary>
+        private bool IsValidGroundHit(RaycastHit hit)
+        {
+            const float MAX_SLOPE_ANGLE = 45f; // Maximum walkable slope
+            
+            // Check if the surface is not too steep
+            float slopeAngle = Vector3.Angle(hit.normal, Vector3.up);
+            return slopeAngle <= MAX_SLOPE_ANGLE;
+        }
+
+        /// <summary>
+        /// Check if raycast hit the character's own collider
+        /// Prevents false ground detection from self-collision
+        /// </summary>
+        private bool IsHittingSelf(RaycastHit hit)
+        {
+            // Check if hit collider belongs to this GameObject or its children
+            return hit.collider.transform == transform || 
+                   hit.collider.transform.IsChildOf(transform) ||
+                   hit.collider.gameObject == gameObject;
         }
 
         private void FixedUpdate()

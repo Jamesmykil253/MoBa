@@ -3,8 +3,6 @@ using UnityEngine;
 using Unity.Collections;
 using System.Collections.Generic;
 using System.Collections;
-using Unity.Burst;
-using Unity.Mathematics;
 
 namespace MOBA.Networking
 {

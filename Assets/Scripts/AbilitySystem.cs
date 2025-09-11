@@ -6,11 +6,15 @@ namespace MOBA
     /// Basic ability system for the MOBA game
     /// Manages ability casting, cooldowns, and effects
     /// Designed for future network integration
+    /// Integrated with RSBCombatSystem for standardized damage calculations
     /// </summary>
     public class AbilitySystem : MonoBehaviour
     {
         [Header("Ability Settings")]
         [SerializeField] private float globalCooldown = 0.1f;
+
+        [Header("Combat System Integration")]
+        [SerializeField] private RSBCombatSystem rsbCombatSystem;
 
         // Ability cooldown tracking
         private float lastAbilityCastTime;
@@ -23,6 +27,16 @@ namespace MOBA
             abilityCooldowns["Ability1"] = 0f;
             abilityCooldowns["Ability2"] = 0f;
             abilityCooldowns["Ultimate"] = 0f;
+            
+            // Cache RSB Combat System for damage calculations
+            if (rsbCombatSystem == null)
+            {
+                rsbCombatSystem = FindAnyObjectByType<RSBCombatSystem>();
+                if (rsbCombatSystem == null)
+                {
+                    Debug.LogWarning("[AbilitySystem] RSBCombatSystem not found - using default damage calculations");
+                }
+            }
         }
 
         private void Update()
@@ -49,12 +63,31 @@ namespace MOBA
 
         /// <summary>
         /// Casts an ability at the specified target position
+        /// Integrated with RSBCombatSystem for standardized damage calculations
         /// </summary>
         public void CastAbility(AbilityData ability, Vector2 targetPosition)
         {
             if (!CanCastAbility(ability)) return;
 
-            Debug.Log($"Casting {ability.name} at {targetPosition}");
+            // Calculate final damage using RSB combat system
+            float finalDamage = ability.damage; // Default fallback
+            if (rsbCombatSystem != null)
+            {
+                Vector3 attackerPos = transform.position;
+                Vector3 targetPos = new Vector3(targetPosition.x, targetPosition.y, attackerPos.z);
+                finalDamage = rsbCombatSystem.CalculateAbilityDamage(ability, attackerPos, targetPos);
+            }
+
+            // Update ability data with calculated damage
+            AbilityData enhancedAbility = new AbilityData
+            {
+                name = ability.name,
+                damage = finalDamage,
+                range = ability.range,
+                speed = ability.speed
+            };
+
+            Debug.Log($"Casting {ability.name} at {targetPosition} (Base: {ability.damage:F1} → Final: {finalDamage:F1})");
 
             // Set cooldown
             if (abilityCooldowns.ContainsKey(ability.name))
@@ -64,8 +97,8 @@ namespace MOBA
 
             lastAbilityCastTime = Time.time;
 
-            // Spawn ability effect (would use object pool in full implementation)
-            SpawnAbilityEffect(ability, targetPosition);
+            // Spawn ability effect with enhanced damage
+            SpawnAbilityEffect(enhancedAbility, targetPosition);
 
             // Network: Send ability cast to server
             SendAbilityCastToServer(ability.name, targetPosition);

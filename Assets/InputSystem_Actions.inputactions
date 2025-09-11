@@ -378,17 +378,6 @@
                 },
                 {
                     "name": "",
-                    "id": "25b275c6-4130-49de-9976-9a27e9388e54",
-                    "path": "<Keyboard>/leftAlt",
-                    "interactions": "",
-                    "processors": "",
-                    "groups": ";Keyboard&Mouse",
-                    "action": "AbilityCancel",
-                    "isComposite": false,
-                    "isPartOfComposite": false
-                },
-                {
-                    "name": "",
                     "id": "3e308e9a-14a3-46a4-9d6d-4ab5e64673d1",
                     "path": "<XRController>/{PrimaryAction}",
                     "interactions": "",
@@ -511,7 +500,7 @@
                 {
                     "name": "",
                     "id": "1c04ea5f-b012-41d1-a6f7-02e963b52893",
-                    "path": "<Keyboard>/e",
+                    "path": "<Keyboard>/leftAlt",
                     "interactions": "",
                     "processors": "",
                     "groups": "Keyboard&Mouse",

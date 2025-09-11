@@ -18,12 +18,12 @@ namespace MOBA.Networking
         [SerializeField] private bool saveToFile = false;
 
         // Performance counters
-        private ProfilerCounterValue<int> connectedClientsCounter;
-        private ProfilerCounterValue<int> networkMessagesSentCounter;
-        private ProfilerCounterValue<int> networkMessagesReceivedCounter;
-        private ProfilerCounterValue<float> averageLatencyCounter;
-        private ProfilerCounterValue<int> bytesSentPerSecondCounter;
-        private ProfilerCounterValue<int> bytesReceivedPerSecondCounter;
+        private int connectedClientsCounter;
+        private int networkMessagesSentCounter;
+        private int networkMessagesReceivedCounter;
+        private float averageLatencyCounter;
+        private int bytesSentPerSecondCounter;
+        private int bytesReceivedPerSecondCounter;
 
         // Network stats tracking
         private int lastFrameMessagesSent;
@@ -43,10 +43,33 @@ namespace MOBA.Networking
         private NetworkManager networkManager;
         private NetworkGameManager gameManager;
 
+        // Public properties for accessing counter values
+        public int ConnectedClients => connectedClientsCounter;
+        public int MessagesSentPerSecond => networkMessagesSentCounter;
+        public int MessagesReceivedPerSecond => networkMessagesReceivedCounter;
+        public float AverageLatency => averageLatencyCounter;
+        public int BytesSentPerSecond => bytesSentPerSecondCounter;
+        public int BytesReceivedPerSecond => bytesReceivedPerSecondCounter;
+
+        // Methods for testing framework compatibility
+        public int TotalBytesSent { get; private set; }
+        public int TotalBytesReceived { get; private set; }
+
+        public void RecordPacketSent(int bytes)
+        {
+            TotalBytesSent += bytes;
+        }
+
+        public void RecordPacketReceived(int bytes)
+        {
+            TotalBytesReceived += bytes;
+        }
+
         private void Awake()
         {
             networkManager = NetworkManager.Singleton;
             gameManager = Object.FindFirstObjectByType<NetworkGameManager>();
+            lastProfilingTime = Time.time;
 
             if (enableProfiling)
             {
@@ -56,42 +79,13 @@ namespace MOBA.Networking
 
         private void InitializeProfilers()
         {
-            // Create profiler counters
-            connectedClientsCounter = new ProfilerCounterValue<int>(
-                ProfilerCategory.Network,
-                "Connected Clients",
-                ProfilerMarkerDataUnit.Count,
-                ProfilerCounterOptions.FlushOnEndOfFrame);
-
-            networkMessagesSentCounter = new ProfilerCounterValue<int>(
-                ProfilerCategory.Network,
-                "Messages Sent/s",
-                ProfilerMarkerDataUnit.Count,
-                ProfilerCounterOptions.FlushOnEndOfFrame);
-
-            networkMessagesReceivedCounter = new ProfilerCounterValue<int>(
-                ProfilerCategory.Network,
-                "Messages Received/s",
-                ProfilerMarkerDataUnit.Count,
-                ProfilerCounterOptions.FlushOnEndOfFrame);
-
-            averageLatencyCounter = new ProfilerCounterValue<float>(
-                ProfilerCategory.Network,
-                "Average Latency (ms)",
-                ProfilerMarkerDataUnit.TimeNanoseconds,
-                ProfilerCounterOptions.FlushOnEndOfFrame);
-
-            bytesSentPerSecondCounter = new ProfilerCounterValue<int>(
-                ProfilerCategory.Network,
-                "Bytes Sent/s",
-                ProfilerMarkerDataUnit.Bytes,
-                ProfilerCounterOptions.FlushOnEndOfFrame);
-
-            bytesReceivedPerSecondCounter = new ProfilerCounterValue<int>(
-                ProfilerCategory.Network,
-                "Bytes Received/s",
-                ProfilerMarkerDataUnit.Bytes,
-                ProfilerCounterOptions.FlushOnEndOfFrame);
+            // Initialize simple counter variables
+            connectedClientsCounter = 0;
+            networkMessagesSentCounter = 0;
+            networkMessagesReceivedCounter = 0;
+            averageLatencyCounter = 0f;
+            bytesSentPerSecondCounter = 0;
+            bytesReceivedPerSecondCounter = 0;
 
             UnityEngine.Debug.Log("[NetworkProfiler] Profilers initialized");
         }
@@ -119,19 +113,19 @@ namespace MOBA.Networking
         {
             // Connected clients
             int connectedClients = gameManager != null ? gameManager.ConnectedPlayers : 0;
-            connectedClientsCounter.Value = connectedClients;
+            connectedClientsCounter = connectedClients;
 
             // Network traffic (simplified - would need transport-specific implementation)
             // For UnityTransport, we'd need to access internal counters
             // This is a placeholder for actual network statistics
-            networkMessagesSentCounter.Value = GetMessagesSentPerSecond();
-            networkMessagesReceivedCounter.Value = GetMessagesReceivedPerSecond();
-            bytesSentPerSecondCounter.Value = GetBytesSentPerSecond();
-            bytesReceivedPerSecondCounter.Value = GetBytesReceivedPerSecond();
+            networkMessagesSentCounter = GetMessagesSentPerSecond();
+            networkMessagesReceivedCounter = GetMessagesReceivedPerSecond();
+            bytesSentPerSecondCounter = GetBytesSentPerSecond();
+            bytesReceivedPerSecondCounter = GetBytesReceivedPerSecond();
 
             // Average latency
             float avgLatency = CalculateAverageLatency();
-            averageLatencyCounter.Value = (int)(avgLatency * 1000000); // Convert to nanoseconds
+            averageLatencyCounter = avgLatency; // Store in milliseconds
         }
 
         private void UpdateLatencyTracking()
@@ -159,6 +153,8 @@ namespace MOBA.Networking
                 pingStopwatches[clientId].Restart();
                 PingClientRpc(clientId);
             }
+            
+            lastProfilingTime = Time.time;
         }
 
         [ClientRpc]

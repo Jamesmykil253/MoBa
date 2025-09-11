@@ -1,0 +1,20 @@
+{
+    "name": "MOBA.Runtime",
+    "rootNamespace": "MOBA",
+    "references": [
+        "Unity.Netcode.Runtime",
+        "Unity.Collections",
+        "Unity.Jobs",
+        "Unity.InputSystem",
+        "Unity.TextMeshPro"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

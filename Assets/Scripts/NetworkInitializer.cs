@@ -22,57 +22,63 @@ namespace MOBA
 
         private void InitializeNetworkSingletons()
         {
-            // Force creation of NetworkObjectPoolManager singleton
-            var poolManager = NetworkObjectPoolManager.Instance;
-            if (poolManager != null)
-            {
-                if (enableDebugLogging)
-                    Debug.Log($"[NetworkInitializer] ✅ NetworkObjectPoolManager singleton created: {poolManager.gameObject.name}");
-            }
-            else
-            {
-                Debug.LogError("[NetworkInitializer] ❌ Failed to create NetworkObjectPoolManager singleton!");
-            }
-
-            // Force creation of other network singletons if they exist
+            // Based on Clean Code principles - proper error handling and defensive programming
             try
             {
-                var eventBus = NetworkEventBus.Instance;
-                if (enableDebugLogging && eventBus != null)
-                    Debug.Log("[NetworkInitializer] ✅ NetworkEventBus singleton ready");
+                // Force creation of NetworkObjectPoolManager singleton with proper error handling
+                var poolManager = NetworkObjectPoolManager.Instance;
+                if (poolManager != null)
+                {
+                    if (enableDebugLogging)
+                        Debug.Log($"[NetworkInitializer] ✅ NetworkObjectPoolManager singleton created: {poolManager.gameObject.name}");
+                }
+                else
+                {
+                    Debug.LogError("[NetworkInitializer] ❌ Failed to create NetworkObjectPoolManager singleton!");
+                }
             }
             catch (System.Exception e)
             {
-                if (enableDebugLogging)
-                    Debug.Log($"[NetworkInitializer] NetworkEventBus not available: {e.Message}");
+                Debug.LogError($"[NetworkInitializer] ❌ NetworkObjectPoolManager initialization failed: {e.Message}");
             }
 
-            try
-            {
-                var lagManager = LagCompensationManager.Instance;
-                if (enableDebugLogging && lagManager != null)
-                    Debug.Log("[NetworkInitializer] ✅ LagCompensationManager singleton ready");
-            }
-            catch (System.Exception e)
-            {
-                if (enableDebugLogging)
-                    Debug.Log($"[NetworkInitializer] LagCompensationManager not available: {e.Message}");
-            }
-
-            try
-            {
-                var antiCheat = AntiCheatSystem.Instance;
-                if (enableDebugLogging && antiCheat != null)
-                    Debug.Log("[NetworkInitializer] ✅ AntiCheatSystem singleton ready");
-            }
-            catch (System.Exception e)
-            {
-                if (enableDebugLogging)
-                    Debug.Log($"[NetworkInitializer] AntiCheatSystem not available: {e.Message}");
-            }
+            // Initialize other network singletons with proper error handling
+            InitializeSingletonSafely<NetworkEventBus>("NetworkEventBus");
+            InitializeSingletonSafely<LagCompensationManager>("LagCompensationManager");
+            InitializeSingletonSafely<AntiCheatSystem>("AntiCheatSystem");
 
             if (enableDebugLogging)
                 Debug.Log("[NetworkInitializer] ✅ Network singleton initialization complete");
+        }
+
+        /// <summary>
+        /// Safe singleton initialization with proper exception handling
+        /// Implements Clean Code defensive programming principles
+        /// </summary>
+        private void InitializeSingletonSafely<T>(string singletonName) where T : MonoBehaviour
+        {
+            try
+            {
+                // Use reflection to access the Instance property
+                var instanceProperty = typeof(T).GetProperty("Instance", 
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                
+                if (instanceProperty != null)
+                {
+                    var instance = instanceProperty.GetValue(null) as T;
+                    if (enableDebugLogging && instance != null)
+                        Debug.Log($"[NetworkInitializer] ✅ {singletonName} singleton ready");
+                }
+                else
+                {
+                    Debug.LogWarning($"[NetworkInitializer] ⚠️ {singletonName} does not have Instance property");
+                }
+            }
+            catch (System.Exception e)
+            {
+                if (enableDebugLogging)
+                    Debug.LogWarning($"[NetworkInitializer] ⚠️ {singletonName} not available: {e.Message}");
+            }
         }
 
         /// <summary>

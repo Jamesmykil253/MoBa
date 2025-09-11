@@ -16,11 +16,17 @@ namespace MOBA
         [Header("Command System")]
         [SerializeField] private CommandManager commandManager;
         [SerializeField] private AbilitySystem abilitySystem;
+        [SerializeField] private HoldToAimSystem holdToAimSystem;
+        [SerializeField] private CryptoCoinSystem cryptoCoinSystem;
+        [SerializeField] private RSBCombatSystem rsbCombatSystem;
 
         // Public properties for external access
         public MOBACharacterController CharacterController => characterController;
         public CommandManager CommandManager => commandManager;
         public AbilitySystem AbilitySystem => abilitySystem;
+        public HoldToAimSystem HoldToAimSystem => holdToAimSystem;
+        public CryptoCoinSystem CryptoCoinSystem => cryptoCoinSystem;
+        public RSBCombatSystem RSBCombatSystem => rsbCombatSystem;
 
         private PlayerInput playerInput;
         private InputActionAsset inputActions;
@@ -31,9 +37,20 @@ namespace MOBA
         private bool ability1Held;
         private bool ability2Held;
         private bool ultimateHeld;
+        private bool scorePressed;
         private Vector3 aimPosition;
 
         private void Awake()
+        {
+            InitializePlayerInput();
+            CacheComponentReferences();
+        }
+
+        /// <summary>
+        /// Initialize PlayerInput component with proper error handling
+        /// Following Clean Code principle of single responsibility
+        /// </summary>
+        private void InitializePlayerInput()
         {
             // Get PlayerInput component
             playerInput = GetComponent<PlayerInput>();
@@ -41,153 +58,176 @@ namespace MOBA
             // Load input actions if not assigned
             if (inputActions == null)
             {
-                // Use the same InputSystem_Actions as other scripts
-                var inputSystemActions = new InputSystem_Actions();
-                inputActions = inputSystemActions.asset;
+                // Use the InputActionAsset from the PlayerInput component if available
+                inputActions = playerInput.actions;
                 if (inputActions != null && playerInput != null)
                 {
                     playerInput.actions = inputActions;
-                    Debug.Log("[InputRelay] InputSystem_Actions loaded successfully");
+                    Debug.Log("[InputRelay] ✅ InputActions loaded successfully");
                 }
             }
+        }
 
-            // Find dependencies if not assigned
+        /// <summary>
+        /// Cache component references to avoid expensive FindAnyObjectByType calls
+        /// Implements dependency injection pattern from Clean Code principles
+        /// </summary>
+        private void CacheComponentReferences()
+        {
+            // Find dependencies if not assigned - only do this once in Awake
             if (characterController == null)
             {
                 characterController = GetComponent<MOBACharacterController>();
                 if (characterController == null && Application.isPlaying)
                 {
-                    characterController = Object.FindAnyObjectByType<MOBACharacterController>();
+                    // Only use expensive search as last resort, and cache the result
+                    characterController = FindCharacterControllerInScene();
                 }
             }
 
-            if (commandManager == null && Application.isPlaying)
-            {
-                commandManager = Object.FindAnyObjectByType<CommandManager>();
-                if (commandManager == null)
-                {
-                    Debug.LogWarning("[InputRelay] CommandManager not found in scene. Commands will not work until one is available.");
-                }
-            }
+            // Cache other dependencies with null-safe checks
+            CacheDependency(ref commandManager, "CommandManager");
+            CacheDependency(ref abilitySystem, "AbilitySystem");
+            CacheDependency(ref holdToAimSystem, "HoldToAimSystem");
+            CacheDependency(ref cryptoCoinSystem, "CryptoCoinSystem");
+            CacheDependency(ref rsbCombatSystem, "RSBCombatSystem");
+        }
 
-            if (abilitySystem == null && Application.isPlaying)
+        /// <summary>
+        /// Generic method to cache dependencies with proper error handling
+        /// Reduces code duplication following DRY principle
+        /// </summary>
+        private void CacheDependency<T>(ref T dependency, string componentName) where T : MonoBehaviour
+        {
+            if (dependency == null && Application.isPlaying)
             {
-                abilitySystem = Object.FindAnyObjectByType<AbilitySystem>();
-                if (abilitySystem == null)
+                dependency = Object.FindAnyObjectByType<T>();
+                if (dependency == null)
                 {
-                    Debug.LogWarning("[InputRelay] AbilitySystem not found in scene. Abilities will not work until one is available.");
+                    Debug.LogWarning($"[InputRelay] {componentName} not found in scene. {componentName} features will not work until one is available.");
+                }
+                else
+                {
+                    Debug.Log($"[InputRelay] ✅ {componentName} cached successfully");
                 }
             }
         }
 
+        /// <summary>
+        /// Specialized method to find character controller with fallback logic
+        /// </summary>
+        private MOBACharacterController FindCharacterControllerInScene()
+        {
+            // Try to find on this GameObject first
+            var controller = GetComponent<MOBACharacterController>();
+            if (controller != null) return controller;
+
+            // Try to find on parent
+            controller = GetComponentInParent<MOBACharacterController>();
+            if (controller != null) return controller;
+
+            // Last resort: search scene (expensive)
+            controller = Object.FindAnyObjectByType<MOBACharacterController>();
+            if (controller != null)
+            {
+                Debug.Log($"[InputRelay] ✅ Found character controller on {controller.gameObject.name}");
+            }
+
+            return controller;
+        }
+
         private void OnEnable()
         {
-            if (playerInput != null && playerInput.actions != null)
+            if (playerInput?.actions == null)
             {
-                try
+                Debug.LogWarning("[InputRelay] PlayerInput or actions not available");
+                return;
+            }
+
+            try
+            {
+                // Movement and basic actions - using correct action map structure
+                SubscribeToActionSafely("Move", OnMovement, OnMovement);
+                SubscribeToActionSafely("Jump", OnJump);
+                SubscribeToActionSafely("Attack", OnPrimaryAttack);
+                SubscribeToActionSafely("Home", OnInteract);
+
+                // Ability inputs with hold-to-aim mechanics (per Game Programming Patterns - Command Pattern)
+                SubscribeToActionSafely("Ability1", OnAbility1Start, OnAbility1End);
+                SubscribeToActionSafely("Ability2", OnAbility2Start, OnAbility2End);
+
+                // Scoring system input (Left Alt key per CONTROLS.md)
+                SubscribeToActionSafely("Score", OnScoreStart, OnScoreEnd);
+
+                // Camera and UI actions
+                SubscribeToActionSafely("Aim", OnCameraPan);
+
+                Debug.Log("[InputRelay] ✅ Input subscriptions successful");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[InputRelay] ❌ Failed to subscribe to inputs: {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Safely subscribe to an input action with proper error handling
+        /// Based on Clean Code principles - defensive programming
+        /// </summary>
+        private void SubscribeToActionSafely(string actionName, System.Action<InputAction.CallbackContext> performedCallback, System.Action<InputAction.CallbackContext> canceledCallback = null)
+        {
+            var action = playerInput.actions.FindAction(actionName);
+            if (action != null)
+            {
+                action.performed += performedCallback;
+                if (canceledCallback != null)
                 {
-                    // Movement and basic actions - using Player/ action paths
-                    if (playerInput.actions.FindAction("Player/Move") != null)
-                    {
-                        playerInput.actions["Player/Move"].performed += OnMovement;
-                        playerInput.actions["Player/Move"].canceled += OnMovement;
-                    }
-                    if (playerInput.actions.FindAction("Player/Jump") != null)
-                    {
-                        playerInput.actions["Player/Jump"].performed += OnJump;
-                    }
-                    if (playerInput.actions.FindAction("Player/Attack") != null)
-                    {
-                        playerInput.actions["Player/Attack"].performed += OnPrimaryAttack;
-                    }
-                    if (playerInput.actions.FindAction("Player/Home") != null)
-                    {
-                        playerInput.actions["Player/Home"].performed += OnInteract;
-                    }
-
-                    // Ability inputs with hold-to-aim
-                    if (playerInput.actions.FindAction("Player/Ability1") != null)
-                    {
-                        playerInput.actions["Player/Ability1"].performed += OnAbility1Start;
-                        playerInput.actions["Player/Ability1"].canceled += OnAbility1End;
-                    }
-                    if (playerInput.actions.FindAction("Player/Ability2") != null)
-                    {
-                        playerInput.actions["Player/Ability2"].performed += OnAbility2Start;
-                        playerInput.actions["Player/Ability2"].canceled += OnAbility2End;
-                    }
-
-                    // Camera and UI - using available actions
-                    if (playerInput.actions.FindAction("Player/Aim") != null)
-                    {
-                        playerInput.actions["Player/Aim"].performed += OnCameraPan;
-                    }
-                    if (playerInput.actions.FindAction("Player/Pause") != null)
-                    {
-                        playerInput.actions["Player/Pause"].performed += OnOpenMainMenu;
-                    }
-
-                    Debug.Log("[InputRelay] Input subscriptions successful");
-                }
-                catch (System.Exception e)
-                {
-                    Debug.LogError($"[InputRelay] Failed to subscribe to inputs: {e.Message}");
+                    action.canceled += canceledCallback;
                 }
             }
             else
             {
-                Debug.LogWarning("[InputRelay] PlayerInput or actions not available");
+                Debug.LogWarning($"[InputRelay] Action '{actionName}' not found in input actions");
             }
         }
 
         private void OnDisable()
         {
-            if (playerInput != null && playerInput.actions != null)
+            if (playerInput?.actions == null) return;
+
+            try
             {
-                try
-                {
-                    // Unsubscribe from all actions - using Player/ action paths
-                    if (playerInput.actions.FindAction("Player/Move") != null)
-                    {
-                        playerInput.actions["Player/Move"].performed -= OnMovement;
-                        playerInput.actions["Player/Move"].canceled -= OnMovement;
-                    }
-                    if (playerInput.actions.FindAction("Player/Jump") != null)
-                    {
-                        playerInput.actions["Player/Jump"].performed -= OnJump;
-                    }
-                    if (playerInput.actions.FindAction("Player/Attack") != null)
-                    {
-                        playerInput.actions["Player/Attack"].performed -= OnPrimaryAttack;
-                    }
-                    if (playerInput.actions.FindAction("Player/Home") != null)
-                    {
-                        playerInput.actions["Player/Home"].performed -= OnInteract;
-                    }
+                // Unsubscribe from all actions using the same safe method
+                UnsubscribeFromActionSafely("Move", OnMovement, OnMovement);
+                UnsubscribeFromActionSafely("Jump", OnJump);
+                UnsubscribeFromActionSafely("Attack", OnPrimaryAttack);
+                UnsubscribeFromActionSafely("Home", OnInteract);
+                UnsubscribeFromActionSafely("Ability1", OnAbility1Start, OnAbility1End);
+                UnsubscribeFromActionSafely("Ability2", OnAbility2Start, OnAbility2End);
+                UnsubscribeFromActionSafely("Score", OnScoreStart, OnScoreEnd);
+                UnsubscribeFromActionSafely("Aim", OnCameraPan);
 
-                    if (playerInput.actions.FindAction("Player/Ability1") != null)
-                    {
-                        playerInput.actions["Player/Ability1"].performed -= OnAbility1Start;
-                        playerInput.actions["Player/Ability1"].canceled -= OnAbility1End;
-                    }
-                    if (playerInput.actions.FindAction("Player/Ability2") != null)
-                    {
-                        playerInput.actions["Player/Ability2"].performed -= OnAbility2Start;
-                        playerInput.actions["Player/Ability2"].canceled -= OnAbility2End;
-                    }
+                Debug.Log("[InputRelay] ✅ Input unsubscriptions successful");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[InputRelay] ❌ Failed to unsubscribe from inputs: {e.Message}");
+            }
+        }
 
-                    if (playerInput.actions.FindAction("Player/Aim") != null)
-                    {
-                        playerInput.actions["Player/Aim"].performed -= OnCameraPan;
-                    }
-                    if (playerInput.actions.FindAction("Player/Pause") != null)
-                    {
-                        playerInput.actions["Player/Pause"].performed -= OnOpenMainMenu;
-                    }
-                }
-                catch (System.Exception e)
+        /// <summary>
+        /// Safely unsubscribe from an input action with proper error handling
+        /// Follows Clean Code defensive programming principles
+        /// </summary>
+        private void UnsubscribeFromActionSafely(string actionName, System.Action<InputAction.CallbackContext> performedCallback, System.Action<InputAction.CallbackContext> canceledCallback = null)
+        {
+            var action = playerInput.actions.FindAction(actionName);
+            if (action != null)
+            {
+                action.performed -= performedCallback;
+                if (canceledCallback != null)
                 {
-                    Debug.LogError($"[InputRelay] Failed to unsubscribe from inputs: {e.Message}");
+                    action.canceled -= canceledCallback;
                 }
             }
         }
@@ -251,6 +291,14 @@ namespace MOBA
             {
                 Debug.Log("Ultimate held");
             }
+
+            // Handle score input
+            if (scorePressed)
+            {
+                // Score input is handled by calling StartScoring
+                var cryptoCoinSystem = FindAnyObjectByType<CryptoCoinSystem>();
+                cryptoCoinSystem?.StartScoring();
+            }
         }
 
         // Input event handlers
@@ -285,32 +333,58 @@ namespace MOBA
         private void OnAbility1Start(InputAction.CallbackContext context)
         {
             ability1Held = true;
+            
+            // Start hold-to-aim for Ability1 (per GAMEPLAY.md - manual aim required)
+            if (holdToAimSystem != null && abilitySystem != null)
+            {
+                var ability1Data = new AbilityData 
+                { 
+                    name = "Ability1", 
+                    damage = 100f, 
+                    range = 8f, 
+                    speed = 15f
+                };
+                holdToAimSystem.StartHoldToAim(ability1Data);
+            }
         }
 
         private void OnAbility1End(InputAction.CallbackContext context)
         {
             ability1Held = false;
-            // Execute ability command when released
-            if (commandManager != null && abilitySystem != null)
+            
+            // Execute aimed ability when button released (per CONTROLS.md hold-to-aim spec)
+            if (holdToAimSystem != null)
             {
-                var command = new AbilityCommand(abilitySystem, new AbilityData { name = "Ability1" }, aimPosition);
-                commandManager.ExecuteCommand(command);
+                holdToAimSystem.ExecuteAimedAbility();
             }
         }
 
         private void OnAbility2Start(InputAction.CallbackContext context)
         {
             ability2Held = true;
+            
+            // Start hold-to-aim for Ability2 (per GAMEPLAY.md - manual aim required)
+            if (holdToAimSystem != null && abilitySystem != null)
+            {
+                var ability2Data = new AbilityData 
+                { 
+                    name = "Ability2", 
+                    damage = 120f, 
+                    range = 12f, 
+                    speed = 10f
+                };
+                holdToAimSystem.StartHoldToAim(ability2Data);
+            }
         }
 
         private void OnAbility2End(InputAction.CallbackContext context)
         {
             ability2Held = false;
-            // Execute ability command when released
-            if (commandManager != null && abilitySystem != null)
+            
+            // Execute aimed ability when button released
+            if (holdToAimSystem != null)
             {
-                var command = new AbilityCommand(abilitySystem, new AbilityData { name = "Ability2" }, aimPosition);
-                commandManager.ExecuteCommand(command);
+                holdToAimSystem.ExecuteAimedAbility();
             }
         }
 
@@ -332,14 +406,61 @@ namespace MOBA
 
         private void OnCameraPan(InputAction.CallbackContext context)
         {
-            // Handle camera panning
-            Debug.Log("Camera pan input received");
+            // Handle both camera panning and aim input based on current state
+            Vector2 inputValue = context.ReadValue<Vector2>();
+            
+            // If holding to aim, update aim position
+            if (holdToAimSystem != null && holdToAimSystem.GetAimInfo().isAiming)
+            {
+                holdToAimSystem.UpdateAimInput(inputValue);
+            }
+            else
+            {
+                // Regular camera panning
+                Debug.Log($"Camera pan input received: {inputValue}");
+            }
         }
 
         private void OnOpenMainMenu(InputAction.CallbackContext context)
         {
             // Handle main menu opening
             Debug.Log("Main menu input received");
+        }
+
+        /// <summary>
+        /// Handle score input start (Left Alt pressed)
+        /// Initiates crypto coin scoring sequence per CONTROLS.md
+        /// </summary>
+        private void OnScoreStart(InputAction.CallbackContext context)
+        {
+            scorePressed = true;
+            
+            // Start scoring sequence through CryptoCoinSystem
+            if (cryptoCoinSystem != null)
+            {
+                cryptoCoinSystem.StartScoring();
+                Debug.Log("[InputRelay] Score input started - initiating coin scoring");
+            }
+            else
+            {
+                Debug.LogWarning("[InputRelay] CryptoCoinSystem not found for scoring");
+            }
+        }
+
+        /// <summary>
+        /// Handle score input end (Left Alt released)
+        /// Stops scoring sequence if interrupted
+        /// </summary>
+        private void OnScoreEnd(InputAction.CallbackContext context)
+        {
+            scorePressed = false;
+            
+            // Stop scoring if released early (interruption)
+            if (cryptoCoinSystem != null && cryptoCoinSystem.IsCurrentlyScoring())
+            {
+                cryptoCoinSystem.StopScoring();
+                Debug.Log("[InputRelay] Score input ended - scoring interrupted");
+            }
         }
     }
 
