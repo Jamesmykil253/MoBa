@@ -1,4 +1,3 @@
-using Unity.Netcode;
 using UnityEngine;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -37,6 +36,11 @@ namespace MOBA.Networking
         [SerializeField] private float teleportDetectionThreshold = 10f;
         [SerializeField] private float speedHackDetectionThreshold = 2f;
 
+        [Header("Legitimate Teleport Points")]
+        [SerializeField] private Transform[] spawnPoints; // Explicitly assigned spawn points - Clean Code principle
+        [SerializeField] private Transform[] teleportZones; // Designated teleport areas
+        [SerializeField] private float legitimateTeleportRadius = 3f; // Tighter radius for security
+
         // Client tracking
         private Dictionary<ulong, ClientProfile> clientProfiles = new Dictionary<ulong, ClientProfile>();
         private Dictionary<ulong, Stopwatch> pingStopwatches = new Dictionary<ulong, Stopwatch>();
@@ -50,7 +54,6 @@ namespace MOBA.Networking
             public int speedViolationCount;
             public int teleportViolationCount;
             public int rapidFireViolationCount;
-            public float averageLatency;
             public int totalViolations;
             public float lastViolationTime;
             public bool isSuspected;
@@ -239,16 +242,72 @@ namespace MOBA.Networking
 
         private bool IsLegitimateTeleport(ulong clientId, Vector3 position)
         {
-            // Check if position is near spawn points or other legitimate teleport locations
-            var spawnPoints = FindObjectsByType<Transform>(FindObjectsSortMode.None); // This should be more specific
-            foreach (var spawn in spawnPoints)
+            // Defensive programming - validate inputs first
+            if (position == Vector3.zero || float.IsNaN(position.x) || float.IsNaN(position.y) || float.IsNaN(position.z))
             {
-                if (Vector3.Distance(position, spawn.position) < 2f)
+                UnityEngine.Debug.LogWarning($"[AntiCheat] Invalid teleport position for client {clientId}: {position}");
+                return false;
+            }
+
+            // Check explicitly assigned spawn points - Clean Code single responsibility
+            if (IsNearSpawnPoints(position))
+            {
+                return true;
+            }
+
+            // Check designated teleport zones
+            if (IsNearTeleportZones(position))
+            {
+                return true;
+            }
+
+            // Check if player recently died (respawn scenario)
+            if (clientProfiles.TryGetValue(clientId, out var profile))
+            {
+                float timeSinceLastViolation = Time.time - profile.lastViolationTime;
+                if (timeSinceLastViolation < 5f) // Recent death/respawn
+                {
+                    return IsNearSpawnPoints(position); // Only allow spawn point teleports after death
+                }
+            }
+
+            return false;
+        }
+
+        // Extract method following Clean Code principles - single responsibility
+        private bool IsNearSpawnPoints(Vector3 position)
+        {
+            if (spawnPoints == null || spawnPoints.Length == 0)
+            {
+                UnityEngine.Debug.LogWarning("[AntiCheat] No spawn points configured - all teleports will be flagged as invalid");
+                return false;
+            }
+
+            foreach (var spawnPoint in spawnPoints)
+            {
+                if (spawnPoint != null && Vector3.Distance(position, spawnPoint.position) <= legitimateTeleportRadius)
                 {
                     return true;
                 }
             }
+            return false;
+        }
 
+        // Extract method following Clean Code principles
+        private bool IsNearTeleportZones(Vector3 position)
+        {
+            if (teleportZones == null || teleportZones.Length == 0)
+            {
+                return false; // No teleport zones configured
+            }
+
+            foreach (var zone in teleportZones)
+            {
+                if (zone != null && Vector3.Distance(position, zone.position) <= legitimateTeleportRadius)
+                {
+                    return true;
+                }
+            }
             return false;
         }
 

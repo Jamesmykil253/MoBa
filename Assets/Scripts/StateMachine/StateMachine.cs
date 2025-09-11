@@ -8,14 +8,16 @@ namespace MOBA
     /// Generic State Machine implementation following the State Pattern
     /// Manages state transitions and provides event notifications
     /// Based on Game Programming Patterns by Robert Nystrom
+    /// Thread-safe implementation following Clean Code principles
     /// </summary>
     /// <typeparam name="TContext">The type of object this state machine controls</typeparam>
     public class StateMachine<TContext>
     {
         protected TContext context;
-        private IState<TContext> currentState;
-        private IState<TContext> previousState;
+        private volatile IState<TContext> currentState;
+        private volatile IState<TContext> previousState;
         private Dictionary<Type, IState<TContext>> states;
+        private readonly object stateLock = new object(); // Thread safety following Pragmatic Programmer principles
 
         // Events for state changes (Observer Pattern)
         public event Action<IState<TContext>, IState<TContext>> OnStateChanged;
@@ -56,78 +58,139 @@ namespace MOBA
 
         /// <summary>
         /// Change to a new state
+        /// Thread-safe implementation following Clean Code defensive programming
         /// </summary>
         public void ChangeState<TState>() where TState : IState<TContext>
         {
-            var newStateType = typeof(TState);
-
-            if (!states.TryGetValue(newStateType, out var newState))
+            lock (stateLock) // Atomic state transition - Pragmatic Programmer principle
             {
-                Debug.LogError($"State {newStateType.Name} is not registered!");
-                return;
+                var newStateType = typeof(TState);
+
+                if (!states.TryGetValue(newStateType, out var newState))
+                {
+                    Debug.LogError($"State {newStateType.Name} is not registered!");
+                    return;
+                }
+
+                // Store references before transition to prevent race conditions
+                var oldState = currentState;
+                
+                // Atomic state change - Critical section
+                previousState = currentState;
+                currentState = newState;
+
+                // Execute transition logic outside of critical operations when possible
+                try
+                {
+                    // Exit old state if exists
+                    if (oldState != null)
+                    {
+                        oldState.Exit();
+                        OnStateExited?.Invoke(oldState);
+                    }
+
+                    // Enter new state
+                    currentState.Enter();
+                    OnStateEntered?.Invoke(currentState);
+
+                    // Notify listeners of complete transition
+                    OnStateChanged?.Invoke(oldState, currentState);
+
+                    Debug.Log($"State changed: {(oldState?.GetStateName() ?? "None")} -> {currentState.GetStateName()}");
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogError($"State transition error: {ex.Message}");
+                    // Restore previous state on error - defensive programming
+                    if (oldState != null)
+                    {
+                        currentState = oldState;
+                        previousState = null;
+                    }
+                }
             }
-
-            // Exit current state
-            if (currentState != null)
-            {
-                currentState.Exit();
-                OnStateExited?.Invoke(currentState);
-            }
-
-            // Store previous state
-            previousState = currentState;
-
-            // Enter new state
-            currentState = newState;
-            currentState.Enter();
-            OnStateEntered?.Invoke(currentState);
-
-            // Notify listeners
-            OnStateChanged?.Invoke(previousState, currentState);
-
-            Debug.Log($"State changed: {(previousState?.GetStateName() ?? "None")} -> {currentState.GetStateName()}");
         }
 
         /// <summary>
         /// Update the current state
+        /// Thread-safe read access following Clean Code principles
         /// </summary>
         public void Update()
         {
-            if (currentState != null)
+            IState<TContext> stateToUpdate;
+            lock (stateLock)
             {
-                currentState.Update();
+                stateToUpdate = currentState; // Get reference inside lock
             }
+            
+            // Execute update outside lock to prevent deadlocks
+            stateToUpdate?.Update();
         }
 
         /// <summary>
         /// Get the current state
+        /// Thread-safe property access
         /// </summary>
-        public IState<TContext> CurrentState => currentState;
+        public IState<TContext> CurrentState 
+        { 
+            get 
+            { 
+                lock (stateLock) 
+                { 
+                    return currentState; 
+                } 
+            } 
+        }
 
         /// <summary>
         /// Get the previous state
+        /// Thread-safe property access
         /// </summary>
-        public IState<TContext> PreviousState => previousState;
+        public IState<TContext> PreviousState 
+        { 
+            get 
+            { 
+                lock (stateLock) 
+                { 
+                    return previousState; 
+                } 
+            } 
+        }
 
         /// <summary>
         /// Check if currently in a specific state
+        /// Thread-safe comparison following defensive programming
         /// </summary>
         public bool IsInState<TState>() where TState : IState<TContext>
         {
-            return currentState?.GetType() == typeof(TState);
+            lock (stateLock)
+            {
+                return currentState?.GetType() == typeof(TState);
+            }
         }
 
         /// <summary>
         /// Force exit current state without entering a new one
+        /// Thread-safe operation with error handling
         /// </summary>
         public void ExitCurrentState()
         {
-            if (currentState != null)
+            lock (stateLock)
             {
-                currentState.Exit();
-                OnStateExited?.Invoke(currentState);
-                previousState = currentState;
-                currentState = null;
+                if (currentState != null)
+                {
+                    try
+                    {
+                        currentState.Exit();
+                        OnStateExited?.Invoke(currentState);
+                        previousState = currentState;
+                        currentState = null;
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Debug.LogError($"Error exiting state: {ex.Message}");
+                    }
+                }
             }
         }
 

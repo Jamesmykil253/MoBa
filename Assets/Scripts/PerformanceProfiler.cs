@@ -42,7 +42,17 @@ namespace MOBA
 
         private void Awake()
         {
+            // REMOVED: No auto-initialization - manual setup required for MOBA best practices
+            UnityEngine.Debug.Log("[PerformanceProfiler] Awake - Manual initialization required");
+        }
+
+        /// <summary>
+        /// Manual initialization - call this explicitly for MOBA best practices
+        /// </summary>
+        public void ManualInitialize()
+        {
             InitializeMetrics();
+            UnityEngine.Debug.Log("[PerformanceProfiler] Manual initialization completed");
         }
 
         private void InitializeMetrics()
@@ -142,11 +152,24 @@ namespace MOBA
             }
         }
 
+        private ProjectilePool projectilePoolRef;
+        private AbilitySystem abilitySystemRef;
+
+        /// <summary>
+        /// Manual reference setup - replaces FindAnyObjectByType for MOBA best practices
+        /// </summary>
+        public void SetSystemReferences(ProjectilePool projectilePool = null, AbilitySystem abilitySystem = null)
+        {
+            projectilePoolRef = projectilePool;
+            abilitySystemRef = abilitySystem;
+            UnityEngine.Debug.Log("[PerformanceProfiler] System references configured manually");
+        }
+
         private void ProfileObjectPools()
         {
-            // Profile ProjectilePool - access the pool directly instead of using GetComponent
-            var projectilePool = FindAnyObjectByType<ProjectilePool>();
-            if (projectilePool != null)
+            // REMOVED: FindAnyObjectByType - use SetSystemReferences() instead
+            // var projectilePool = FindAnyObjectByType<ProjectilePool>();
+            if (projectilePoolRef != null)
             {
                 // ProjectilePool should have a method to get active count
                 try
@@ -155,7 +178,7 @@ namespace MOBA
                     var poolField = typeof(ProjectilePool).GetField("projectilePool", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                     if (poolField != null)
                     {
-                        var pool = poolField.GetValue(projectilePool);
+                        var pool = poolField.GetValue(projectilePoolRef);
                         if (pool != null)
                         {
                             var activeCountProperty = pool.GetType().GetProperty("ActiveCount");
@@ -182,11 +205,16 @@ namespace MOBA
 
         private void ProfileAbilitySystem()
         {
-            var abilitySystem = FindAnyObjectByType<AbilitySystem>();
-            if (abilitySystem != null)
+            // REMOVED: FindAnyObjectByType - use SetSystemReferences() instead
+            // var abilitySystem = FindAnyObjectByType<AbilitySystem>();
+            if (abilitySystemRef != null)
             {
                 // Track ability cast frequency (would need to be implemented in AbilitySystem)
-                // metrics["AbilityCasts"].Update(abilitySystem.GetCastsPerSecond());
+                // metrics["AbilityCasts"].Update(abilitySystemRef.GetCastsPerSecond());
+            }
+            else
+            {
+                UnityEngine.Debug.LogWarning("[PerformanceProfiler] AbilitySystem not assigned - use SetSystemReferences()");
             }
         }
 

@@ -44,6 +44,15 @@ namespace MOBA
 
         private void Awake()
         {
+            // REMOVED: No auto-initialization - manual setup required for MOBA best practices
+            UnityEngine.Debug.Log("[EnemyController] Awake - Manual initialization required");
+        }
+
+        /// <summary>
+        /// Manual initialization - call this explicitly for MOBA best practices
+        /// </summary>
+        public void ManualInitialize()
+        {
             // Get required components
             rb = GetComponent<Rigidbody>();
             col = GetComponent<Collider>();
@@ -51,6 +60,7 @@ namespace MOBA
 
             // Initialize
             InitializeEnemy();
+            UnityEngine.Debug.Log("[EnemyController] Manual initialization completed");
         }
 
         private void InitializeEnemy()

@@ -151,17 +151,22 @@ namespace MOBA.Networking
 
         private void Awake()
         {
-            Debug.Log("[MOBACameraController] Awake() - Initializing networked camera controller");
             cam = GetComponent<Camera>();
 
-            // Find projectile pool for integration
-            projectilePool = FindFirstObjectByType<ProjectilePool>();
-            if (projectilePool == null)
-            {
-                Debug.LogWarning("[MOBACameraController] ProjectilePool not found - some features may not work");
-            }
+            // REMOVED: FindFirstObjectByType - manual assignment preferred for MOBA best practices
+            // projectilePool = FindFirstObjectByType<ProjectilePool>();
+            projectilePool = null; // Manual assignment required
 
-            InitializeCameraController();
+            InitializeCameraController(); // PRESERVED: Auto-targeting functionality for MOBA best practices
+        }
+
+        /// <summary>
+        /// Manual ProjectilePool setup for MOBA best practices
+        /// </summary>
+        public void SetProjectilePool(ProjectilePool pool)
+        {
+            projectilePool = pool;
+            UnityEngine.Debug.Log("[MOBACameraController] ProjectilePool configured manually");
         }
 
         private void InitializeCameraController()
@@ -170,7 +175,6 @@ namespace MOBA.Networking
             if (target == null)
             {
                 target = GameObject.FindGameObjectWithTag("Player")?.transform;
-                Debug.Log($"[MOBACameraController] Found player by tag: {target != null}");
 
                 if (target == null)
                 {
@@ -185,20 +189,14 @@ namespace MOBA.Networking
                             {
                                 target = player.transform;
                                 networkPlayerController = player;
-                                Debug.Log($"[MOBACameraController] Found NetworkPlayerController: {target.name}");
                                 break;
                             }
                         }
-                    }
-                    else
-                    {
-                        Debug.LogWarning("[MOBACameraController] No target found - camera will not function");
                     }
                 }
             }
             else
             {
-                Debug.Log($"[MOBACameraController] Target already assigned: {target.name}");
                 networkPlayerController = target.GetComponent<NetworkPlayerController>();
             }
 
@@ -214,7 +212,15 @@ namespace MOBA.Networking
             ValidatePosition(ref lastTargetPosition);
             ValidatePosition(ref lookAheadPosition);
 
-            Debug.Log($"[MOBACameraController] Initialization complete. Target: {target?.name}, Position: {target?.position}");
+            // Debug camera initialization
+            if (target != null)
+            {
+                Debug.Log($"[CAMERA] Initialized - Target: {target.name}, Distance: {currentDistance:F1}m");
+            }
+            else
+            {
+                Debug.LogWarning("[CAMERA] No target found - camera will not function");
+            }
         }
 
         /// <summary>
@@ -387,11 +393,7 @@ namespace MOBA.Networking
 
         private void LateUpdate()
         {
-            if (target == null)
-            {
-                Debug.LogWarning("[MOBACameraController] No target - skipping update");
-                return;
-            }
+            if (target == null) return;
 
             if (IsServer)
             {
@@ -414,11 +416,30 @@ namespace MOBA.Networking
             // Update camera history for lag compensation
             UpdateCameraHistory();
 
-            // Debug logging every 60 frames (once per second at 60fps)
-            if (Time.frameCount % 60 == 0)
+            // Debug camera movement (reduced frequency)
+            if (Time.frameCount % 300 == 0) // Every 5 seconds at 60fps
             {
-                Debug.Log($"[MOBACameraController] Target: {target?.name}, Pos: {target?.position:F2}, Camera Pos: {transform.position:F2}, Distance: {currentDistance:F1}");
+                LogCameraState();
             }
+        }
+
+        /// <summary>
+        /// Logs detailed camera state for debugging
+        /// </summary>
+        private void LogCameraState()
+        {
+            if (target == null) return;
+
+            Vector3 playerVel = Vector3.zero;
+            if (networkPlayerController != null)
+            {
+                Rigidbody playerRb = networkPlayerController.GetComponent<Rigidbody>();
+                if (playerRb != null) playerVel = playerRb.linearVelocity;
+            }
+
+            Debug.Log($"[CAMERA] Target: {target.position:F1} | Camera: {transform.position:F1} | " +
+                     $"Distance: {currentDistance:F1}m | Yaw: {currentYaw:F0}° | " +
+                     $"Player Speed: {playerVel.magnitude:F1}m/s | LookAhead: {Vector3.Distance(target.position, lookAheadPosition):F1}m");
         }
 
         private void ServerUpdate()

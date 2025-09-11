@@ -42,13 +42,30 @@ namespace MOBA
         private void Update()
         {
             // Improved ground detection based on Clean Code principles
+            bool wasGrounded = isGrounded;
             UpdateGroundDetection();
 
-            // Debug ground detection (following Clean Code - remove debug in production)
-            if (Time.frameCount % 60 == 0) // Log every second
+            // Debug ground state changes
+            if (wasGrounded != isGrounded)
             {
-                Debug.Log($"[MOBACharacterController] Ground detection: isGrounded={isGrounded}, Position={transform.position:F2}");
+                Debug.Log($"[MOVEMENT] Ground state changed: {(isGrounded ? "Landed" : "Airborne")} at {transform.position:F1}");
             }
+
+            // Debug movement state every 2 seconds
+            if (Time.frameCount % 120 == 0)
+            {
+                LogMovementState();
+            }
+        }
+
+        /// <summary>
+        /// Logs detailed movement state for debugging
+        /// </summary>
+        private void LogMovementState()
+        {
+            Vector3 velocity = rb.linearVelocity;
+            Debug.Log($"[MOVEMENT] Pos: {transform.position:F1} | Vel: {velocity:F1} (Speed: {velocity.magnitude:F1}m/s) | " +
+                     $"Input: {movementInput:F1} | Grounded: {isGrounded} | CanDoubleJump: {canDoubleJump}");
         }
 
         /// <summary>

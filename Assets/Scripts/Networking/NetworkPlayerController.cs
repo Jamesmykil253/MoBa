@@ -3,6 +3,7 @@ using UnityEngine;
 using Unity.Collections;
 using System.Collections.Generic;
 using System.Collections;
+using System.Collections.Concurrent; // Thread-safe collections following Clean Code
 
 namespace MOBA.Networking
 {
@@ -39,15 +40,16 @@ namespace MOBA.Networking
         private NetworkVariable<int> networkCryptoCoins = new NetworkVariable<int>(
             0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
-        // Client prediction with reconciliation
+        // Client prediction with reconciliation - Thread-safe implementation
         private Vector3 predictedPosition;
         private Vector3 predictedVelocity;
-        private Queue<ClientInput> pendingInputs = new Queue<ClientInput>();
-        private Queue<ClientInput> processedInputs = new Queue<ClientInput>();
-        private float lastServerUpdate;
+        private readonly ConcurrentQueue<ClientInput> pendingInputs = new ConcurrentQueue<ClientInput>(); // Thread-safe queue
+        private readonly ConcurrentQueue<ClientInput> processedInputs = new ConcurrentQueue<ClientInput>(); // Thread-safe queue
+        private volatile float lastServerUpdate; // Volatile for thread safety
         private Coroutine inputCoroutine;
         private Vector3 lastSentPosition;
         private const float POSITION_SEND_THRESHOLD = 0.01f;
+        private const int MAX_PENDING_INPUTS = 100; // Buffer overflow protection - Pragmatic Programmer principle
 
         // Anti-cheat and validation
         private float lastAbilityCastTime;
@@ -120,14 +122,28 @@ namespace MOBA.Networking
 
         public override void OnNetworkDespawn()
         {
+            // Clean shutdown following Clean Code principles
             if (inputCoroutine != null)
             {
                 StopCoroutine(inputCoroutine);
+                inputCoroutine = null; // Prevent memory leaks
             }
 
-            networkPosition.OnValueChanged -= OnNetworkPositionChanged;
-            networkHealth.OnValueChanged -= OnNetworkHealthChanged;
-            networkCryptoCoins.OnValueChanged -= OnNetworkCoinsChanged;
+            // Safe event unsubscription - defensive programming
+            try
+            {
+                networkPosition.OnValueChanged -= OnNetworkPositionChanged;
+                networkHealth.OnValueChanged -= OnNetworkHealthChanged;
+                networkCryptoCoins.OnValueChanged -= OnNetworkCoinsChanged;
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"[NetworkPlayerController] Error during cleanup: {ex.Message}");
+            }
+
+            // Clear input buffers to prevent memory leaks
+            while (pendingInputs.TryDequeue(out _)) { }
+            while (processedInputs.TryDequeue(out _)) { }
         }
 
         private void Update()
@@ -281,6 +297,17 @@ namespace MOBA.Networking
                 // Send input at configured buffer rate
                 if (timeSinceLastSend >= inputBufferSize)
                 {
+                    // Check buffer overflow protection - defensive programming
+                    if (pendingInputs.Count >= MAX_PENDING_INPUTS)
+                    {
+                        Debug.LogWarning("[NetworkPlayerController] Input buffer overflow, dropping oldest inputs");
+                        // Clear some old inputs to prevent memory issues
+                        for (int i = 0; i < MAX_PENDING_INPUTS / 2; i++)
+                        {
+                            pendingInputs.TryDequeue(out _);
+                        }
+                    }
+
                     // Collect current input
                     ClientInput input = new ClientInput
                     {
@@ -290,6 +317,9 @@ namespace MOBA.Networking
                         abilityTarget = aimDirection,
                         timestamp = Time.time
                     };
+
+                    // Thread-safe enqueue
+                    pendingInputs.Enqueue(input);
 
                     // Send to server
                     SubmitInputServerRpc(input);
@@ -380,17 +410,85 @@ namespace MOBA.Networking
             movementInput = input;
         }
 
+        /// <summary>
+        /// Unified jump handling following DRY principle from Pragmatic Programmer
+        /// Single source of truth for jump mechanics (shared with PlayerController)
+        /// </summary>
         public void Jump()
+        {
+            // Defensive programming: Validate prerequisites
+            if (rb == null)
+            {
+                Debug.LogError("[NetworkPlayerController] Cannot jump: Rigidbody component not found");
+                return;
+            }
+
+            // Determine jump capability and appropriate force
+            bool canJump = CanPerformJump(out float jumpForceToUse);
+            
+            if (!canJump)
+            {
+                Debug.Log("[NetworkPlayerController] Jump attempt blocked - conditions not met");
+                return;
+            }
+
+            // Execute jump with proper physics
+            ExecuteJump(jumpForceToUse);
+
+            // Update jump state tracking
+            UpdateJumpState();
+
+            Debug.Log($"[NetworkPlayerController] Jump executed - Force: {jumpForceToUse}, Grounded: {isGrounded}, CanDoubleJump: {canDoubleJump}");
+        }
+
+        /// <summary>
+        /// Determines if jump can be performed and returns appropriate force
+        /// Follows Clean Code principle of single responsibility
+        /// </summary>
+        private bool CanPerformJump(out float jumpForceToUse)
+        {
+            jumpForceToUse = 0f;
+
+            // Ground jump check
+            if (isGrounded)
+            {
+                jumpForceToUse = jumpForce;
+                return true;
+            }
+
+            // Double jump check
+            if (canDoubleJump)
+            {
+                jumpForceToUse = doubleJumpForce;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Executes the actual jump physics
+        /// </summary>
+        private void ExecuteJump(float force)
+        {
+            // Reset vertical velocity to ensure consistent jump height
+            Vector3 velocity = rb.linearVelocity;
+            velocity.y = force;
+            rb.linearVelocity = velocity;
+        }
+
+        /// <summary>
+        /// Updates internal jump state tracking
+        /// </summary>
+        private void UpdateJumpState()
         {
             if (isGrounded)
             {
-                rb.linearVelocity = new Vector3(rb.linearVelocity.x, jumpForce, rb.linearVelocity.z);
-                canDoubleJump = true;
+                canDoubleJump = true; // Reset double jump on ground
             }
             else if (canDoubleJump)
             {
-                rb.linearVelocity = new Vector3(rb.linearVelocity.x, doubleJumpForce, rb.linearVelocity.z);
-                canDoubleJump = false;
+                canDoubleJump = false; // Consume double jump
             }
         }
 

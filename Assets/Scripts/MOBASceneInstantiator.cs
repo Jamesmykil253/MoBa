@@ -21,7 +21,7 @@ namespace MOBA
         [SerializeField] private bool includeNetworking = true;
         [SerializeField] private bool includeUI = true;
         [SerializeField] private bool includeEnvironment = true;
-        [SerializeField] private bool autoStartAfterCreation = true;
+        [SerializeField] private bool autoStartAfterCreation = false; // Changed to manual start only
         [SerializeField] private bool enableDebugLogging = true;
 
         [Header("Player Settings")]

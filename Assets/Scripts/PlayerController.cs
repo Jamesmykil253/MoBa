@@ -17,6 +17,7 @@ namespace MOBA
         [SerializeField] private MOBACharacterController characterController;
         [SerializeField] private CommandManager commandManager;
         [SerializeField] private AbilitySystem abilitySystem;
+        [SerializeField] private ProjectilePool projectilePool; // Manual assignment required
 
         [Header("Player Stats")]
         [SerializeField] private float maxHealth = 1000f;
@@ -66,9 +67,12 @@ namespace MOBA
         private Vector2 serverPosition;
         private float lastNetworkUpdate;
 
-        private void Awake()
+        /// <summary>
+        /// Manual initialization - call this instead of relying on Awake
+        /// </summary>
+        public void Initialize()
         {
-            Debug.Log("[PlayerController] Awake() - Starting initialization");
+            Debug.Log("[PlayerController] Manual Initialize() - Starting initialization");
 
             // Get required components
             rb = GetComponent<Rigidbody>();
@@ -81,7 +85,7 @@ namespace MOBA
             InitializeComponents();
             InitializeStats();
 
-            Debug.Log($"[PlayerController] Initialization complete. Position: {transform.position}, Health: {currentHealth}");
+            Debug.Log($"[PlayerController] Manual initialization complete. Position: {transform.position}, Health: {currentHealth}");
         }
 
         private void InitializeComponents()
@@ -106,23 +110,23 @@ namespace MOBA
                 }
             }
 
-            // Find CommandManager (only in play mode or if it exists)
+            // Find CommandManager (manual setup required)
             if (commandManager == null && Application.isPlaying)
             {
-                commandManager = FindAnyObjectByType<CommandManager>();
+                // commandManager = FindAnyObjectByType<CommandManager>(); // REMOVED: Manual setup required
                 if (commandManager == null)
                 {
-                    Debug.LogWarning("[PlayerController] CommandManager not found in scene. Commands will not work until one is available.");
+                    Debug.LogWarning("[PlayerController] CommandManager not assigned. Use SetCommandManager() to assign manually.");
                 }
             }
 
-            // Find AbilitySystem (only in play mode or if it exists)
+            // Find AbilitySystem (manual setup required)
             if (abilitySystem == null && Application.isPlaying)
             {
-                abilitySystem = FindAnyObjectByType<AbilitySystem>();
+                // abilitySystem = FindAnyObjectByType<AbilitySystem>(); // REMOVED: Manual setup required
                 if (abilitySystem == null)
                 {
-                    Debug.LogWarning("[PlayerController] AbilitySystem not found in scene. Abilities will not work until one is available.");
+                    Debug.LogWarning("[PlayerController] AbilitySystem not assigned. Use SetAbilitySystem() to assign manually.");
                 }
             }
         }
@@ -133,17 +137,23 @@ namespace MOBA
             canDoubleJump = true;
         }
 
-        private void Start()
+        /// <summary>
+        /// Manual setup - call this after Initialize() to set up input connections
+        /// </summary>
+        public void SetupInput()
         {
             // Set up input relay callbacks
             if (inputRelay != null)
             {
                 // These would be set up through the InputRelay's event system
-                Debug.Log("Player Controller initialized with Input Relay");
+                Debug.Log("Player Controller input setup complete");
             }
         }
 
-        private void Update()
+        /// <summary>
+        /// Manual update - call this from your main game loop instead of Unity's Update
+        /// </summary>
+        public void ManualUpdate()
         {
             // Update ground detection
             UpdateGroundDetection();
@@ -158,7 +168,10 @@ namespace MOBA
             UpdateAnimations();
         }
 
-        private void FixedUpdate()
+        /// <summary>
+        /// Manual physics update - call this from your fixed timestep loop instead of Unity's FixedUpdate
+        /// </summary>
+        public void ManualFixedUpdate()
         {
             // Apply movement
             ApplyMovement();
@@ -257,36 +270,86 @@ namespace MOBA
         }
 
         /// <summary>
-        /// Handles jump input
+        /// Unified jump handling following DRY principle from Pragmatic Programmer
+        /// Single source of truth for jump mechanics
         /// </summary>
         public void Jump()
         {
-            // Jump is now handled by MOBACharacterController
+            // Defensive programming: Validate prerequisites
+            if (rb == null)
+            {
+                Debug.LogError("[PlayerController] Cannot jump: Rigidbody component not found");
+                return;
+            }
+
+            // Determine jump capability and appropriate force
+            bool canJump = CanPerformJump(out float jumpForceToUse);
+            
+            if (!canJump)
+            {
+                Debug.Log("[PlayerController] Jump attempt blocked - conditions not met");
+                return;
+            }
+
+            // Execute jump with proper physics
+            ExecuteJump(jumpForceToUse);
+
+            // Update jump state tracking
+            UpdateJumpState();
+
+            // Notify character controller for state management
             if (characterController != null)
             {
-                // Check if we can perform jump or double jump
-                bool canJump = isGrounded || (canDoubleJump && !isGrounded);
-                if (canJump)
-                {
-                    // Use appropriate jump force based on jump type
-                    float jumpForceToUse = isGrounded ? jumpForce : doubleJumpForce;
+                characterController.Jump();
+            }
 
-                    // Apply jump force directly to rigidbody for immediate response
-                    if (rb != null)
-                    {
-                        rb.linearVelocity = new Vector3(rb.linearVelocity.x, jumpForceToUse, rb.linearVelocity.z);
-                    }
+            Debug.Log($"[PlayerController] Jump executed - Force: {jumpForceToUse}, Grounded: {isGrounded}, CanDoubleJump: {canDoubleJump}");
+        }
 
-                    // Also notify character controller for state management
-                    characterController.Jump();
+        /// <summary>
+        /// Determines if jump can be performed and returns appropriate force
+        /// Follows Clean Code principle of single responsibility
+        /// </summary>
+        private bool CanPerformJump(out float jumpForceToUse)
+        {
+            jumpForceToUse = 0f;
 
-                    if (!isGrounded)
-                    {
-                        canDoubleJump = false; // Consume double jump
-                    }
+            // Ground jump check
+            if (isGrounded)
+            {
+                jumpForceToUse = jumpForce;
+                return true;
+            }
 
-                    Debug.Log($"[PlayerController] Jump executed with force: {jumpForceToUse} (Grounded: {isGrounded})");
-                }
+            // Double jump check
+            if (canDoubleJump)
+            {
+                jumpForceToUse = doubleJumpForce;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Executes the actual jump physics
+        /// </summary>
+        private void ExecuteJump(float force)
+        {
+            // Reset vertical velocity to ensure consistent jump height
+            Vector3 velocity = rb.linearVelocity;
+            velocity.y = force;
+            rb.linearVelocity = velocity;
+        }
+
+        /// <summary>
+        /// Updates internal jump state tracking
+        /// </summary>
+        private void UpdateJumpState()
+        {
+            if (!isGrounded && canDoubleJump)
+            {
+                canDoubleJump = false; // Consume double jump
             }
         }
 
@@ -415,12 +478,16 @@ namespace MOBA
 
         private void SpawnCoinPickup(int amount)
         {
-            // Use object pool to spawn coin pickup
-            var pool = FindAnyObjectByType<ProjectilePool>();
-            if (pool != null)
+            // Use object pool to spawn coin pickup (manual pool reference required)
+            // var pool = FindAnyObjectByType<ProjectilePool>(); // REMOVED: Manual setup required
+            if (projectilePool != null)
             {
-                // This would spawn a coin pickup prefab
                 Debug.Log($"Dropped {amount} coins at death location");
+                // Implement coin spawning logic here when pool is manually assigned
+            }
+            else
+            {
+                Debug.LogWarning("ProjectilePool not assigned - cannot spawn coin pickup. Use SetProjectilePool() to assign manually.");
             }
         }
 

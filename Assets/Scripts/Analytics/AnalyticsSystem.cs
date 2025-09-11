@@ -54,18 +54,14 @@ namespace MOBA.Analytics
 
         private void Awake()
         {
-            InitializeAnalyticsSystem();
-            CacheSystemReferences();
+            // REMOVED: No auto-initialization - manual setup required for MOBA best practices
+            Debug.Log("[AnalyticsSystem] Awake - Manual initialization required");
         }
 
         private void Start()
         {
-            if (enableAnalytics)
-            {
-                StartNewSession();
-                SetupEventSubscriptions();
-                InvokeRepeating(nameof(CollectPerformanceSnapshot), 5f, 5f);
-            }
+            // REMOVED: No auto-start - manual activation required for MOBA best practices
+            Debug.Log("[AnalyticsSystem] Start - Manual activation required");
         }
 
         private void Update()
@@ -133,14 +129,34 @@ namespace MOBA.Analytics
         }
 
         /// <summary>
-        /// Cache references to other systems for data collection
+        /// Manual system reference setup - replaces FindAnyObjectByType for MOBA best practices
+        /// </summary>
+        public void SetSystemReferences(
+            Performance.PerformanceOptimizationSystem performance = null,
+            MOBA.Networking.NetworkProfiler profiler = null, 
+            RSBCombatSystem combat = null,
+            CryptoCoinSystem crypto = null)
+        {
+            performanceSystem = performance;
+            networkProfiler = profiler;
+            rsbCombatSystem = combat;
+            cryptoCoinSystem = crypto;
+            
+            Debug.Log("[AnalyticsSystem] System references configured manually");
+        }
+
+        /// <summary>
+        /// Cache references to other systems for data collection - MANUAL SETUP REQUIRED
         /// </summary>
         private void CacheSystemReferences()
         {
-            performanceSystem = FindAnyObjectByType<Performance.PerformanceOptimizationSystem>();
-            networkProfiler = FindAnyObjectByType<MOBA.Networking.NetworkProfiler>();
-            rsbCombatSystem = FindAnyObjectByType<RSBCombatSystem>();
-            cryptoCoinSystem = FindAnyObjectByType<CryptoCoinSystem>();
+            // REMOVED: FindAnyObjectByType calls - use SetSystemReferences() instead
+            // performanceSystem = FindAnyObjectByType<Performance.PerformanceOptimizationSystem>();
+            // networkProfiler = FindAnyObjectByType<MOBA.Networking.NetworkProfiler>();
+            // rsbCombatSystem = FindAnyObjectByType<RSBCombatSystem>();
+            // cryptoCoinSystem = FindAnyObjectByType<CryptoCoinSystem>();
+            
+            Debug.LogWarning("[AnalyticsSystem] Manual system setup required - call SetSystemReferences()");
         }
 
         /// <summary>

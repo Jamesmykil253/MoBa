@@ -230,8 +230,10 @@ namespace MOBA
         {
             InitializeCache();
 
-            // Register with memory manager
-            var memoryManager = FindAnyObjectByType<MemoryManager>();
+            // REMOVED: FindAnyObjectByType - manual setup required for MOBA best practices
+            // var memoryManager = FindAnyObjectByType<MemoryManager>();
+            MemoryManager memoryManager = null; // Manual assignment required
+            
             if (memoryManager != null)
             {
                 foreach (var prototype in abilityPrototypes)
@@ -241,6 +243,28 @@ namespace MOBA
                         memoryManager.TrackObject(prototype, "AbilityPrototypes");
                     }
                 }
+            }
+            else
+            {
+                UnityEngine.Debug.LogWarning("[AbilityPrototype] MemoryManager not assigned - use SetMemoryManager()");
+            }
+        }
+
+        /// <summary>
+        /// Manual memory manager setup for MOBA best practices
+        /// </summary>
+        public void SetMemoryManager(MemoryManager memoryManager)
+        {
+            if (memoryManager != null)
+            {
+                foreach (var prototype in abilityPrototypes)
+                {
+                    if (prototype != null)
+                    {
+                        memoryManager.TrackObject(prototype, "AbilityPrototypes");
+                    }
+                }
+                UnityEngine.Debug.Log("[AbilityPrototype] MemoryManager configured manually");
             }
         }
 

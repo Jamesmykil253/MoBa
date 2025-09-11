@@ -3,6 +3,7 @@ using UnityEditor;
 using Unity.Netcode;
 using Unity.Netcode.Components;
 using Unity.Netcode.Transports.UTP;
+using Unity.Networking.Transport;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
@@ -464,7 +465,7 @@ namespace MOBA.Editor
             
             // Add Unity Transport
             var transport = networkManager.AddComponent<UnityTransport>();
-            transport.SetConnectionData(serverIP, serverPort);
+            transport.SetConnectionData(NetworkEndpoint.Parse(serverIP, serverPort));
             // Note: SetDebugSimulatorParameters is obsolete. Use Network Simulator from Multiplayer Tools package instead.
             
             // Configure NetworkManager
