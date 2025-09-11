@@ -192,12 +192,33 @@ namespace MOBA
                 spriteRenderer.color = color;
             }
 
-            // Reset health (would integrate with health system)
+            // FIXED: Actually reset health to max when respawning
             var playerController = controller.GetComponent<PlayerController>();
             if (playerController != null)
             {
-                // Reset health to max
-                // playerController.Health = playerController.MaxHealth;
+                // Reset health to max using reflection to access private fields
+                var currentHealthField = typeof(PlayerController).GetField("currentHealth", 
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                var maxHealthField = typeof(PlayerController).GetField("maxHealth", 
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    
+                if (currentHealthField != null && maxHealthField != null)
+                {
+                    float maxHealth = (float)maxHealthField.GetValue(playerController);
+                    currentHealthField.SetValue(playerController, maxHealth);
+                    Debug.Log($"[DeadState] Health reset to {maxHealth}");
+                }
+                else
+                {
+                    // Fallback: call respawn method if available
+                    var respawnMethod = typeof(PlayerController).GetMethod("Respawn", 
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    if (respawnMethod != null)
+                    {
+                        respawnMethod.Invoke(playerController, null);
+                        Debug.Log("[DeadState] Called Respawn method");
+                    }
+                }
             }
         }
 

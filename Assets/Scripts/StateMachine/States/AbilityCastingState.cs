@@ -135,6 +135,16 @@ namespace MOBA
 
         private void SpawnAbilityProjectile()
         {
+            // DISABLED: Projectile system removed - ability effects only (no projectiles)
+            Vector3 playerPosition = controller.transform.position + controller.transform.forward * 1f + Vector3.up * 0.5f;
+            
+            Debug.Log($"[AbilityCastingState] Ability cast at position: {playerPosition} (projectile spawning disabled)");
+            
+            // Apply ability effects directly without projectiles
+            ApplyAbilityEffects();
+            
+            // Original projectile spawning code commented out:
+            /*
             // Use object pool for projectile spawning
             var pool = Object.FindAnyObjectByType<ProjectilePool>();
             if (pool != null)
@@ -147,18 +157,20 @@ namespace MOBA
 
                 if (availableFlyweights.Contains(flyweightName))
                 {
-                    pool.SpawnProjectileWithFlyweight(controller.transform.position, direction, flyweightName);
+                    pool.SpawnProjectileWithFlyweight(playerPosition, direction, flyweightName);
+                    Debug.Log($"[AbilityCastingState] Spawned projectile from player position: {playerPosition}");
                 }
                 else
                 {
-                    pool.SpawnProjectile(controller.transform.position, direction, 15f, 100f, 3f);
+                    pool.SpawnProjectile(playerPosition, direction, 15f, 100f, 3f);
+                    Debug.Log($"[AbilityCastingState] Spawned fallback projectile from player position: {playerPosition}");
                 }
             }
             else
             {
-                // Fallback: create basic projectile
+                // Fallback: create basic projectile FROM PLAYER, not camera
                 GameObject projectile = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                projectile.transform.position = controller.transform.position;
+                projectile.transform.position = playerPosition; // FIXED: Use player position
                 projectile.transform.localScale = Vector3.one * 0.5f;
 
                 var rb = projectile.AddComponent<Rigidbody>();
@@ -166,7 +178,9 @@ namespace MOBA
                 rb.linearVelocity = direction * 15f;
 
                 Object.Destroy(projectile, 3f);
+                Debug.Log($"[AbilityCastingState] Spawned manual projectile from player position: {playerPosition}");
             }
+            */
         }
 
         private void ApplyAbilityEffects()

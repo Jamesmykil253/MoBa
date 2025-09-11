@@ -87,7 +87,9 @@ namespace MOBA
                 speed = ability.speed
             };
 
+            #if UNITY_EDITOR || DEVELOPMENT_BUILD
             Debug.Log($"Casting {ability.name} at {targetPosition} (Base: {ability.damage:F1} → Final: {finalDamage:F1})");
+            #endif
 
             // Set cooldown
             if (abilityCooldowns.ContainsKey(ability.name))
@@ -164,32 +166,40 @@ namespace MOBA
 
         private void SpawnAbilityEffect(AbilityData ability, Vector2 targetPosition)
         {
+            // DISABLED: Projectile system removed - using placeholder effects only
             // Use object pool for effects
-            var pool = Object.FindAnyObjectByType<ProjectilePool>();
-            if (pool != null)
-            {
-                // Spawn projectile based on ability type
-                Vector2 direction = (targetPosition - (Vector2)transform.position).normalized;
+            // var pool = Object.FindAnyObjectByType<ProjectilePool>();
+            // if (pool != null)
+            // {
+            //     // Spawn projectile based on ability type
+            //     Vector2 direction = (targetPosition - (Vector2)transform.position).normalized;
 
-                // Try to use flyweight for this ability
-                string flyweightName = GetFlyweightNameForAbility(ability.name);
-                var availableFlyweights = pool.GetAvailableFlyweightNames();
+            //     // Try to use flyweight for this ability
+            //     string flyweightName = GetFlyweightNameForAbility(ability.name);
+            //     var availableFlyweights = pool.GetAvailableFlyweightNames();
 
-                if (availableFlyweights.Contains(flyweightName))
-                {
-                    pool.SpawnProjectileWithFlyweight(transform.position, direction, flyweightName);
-                }
-                else
-                {
-                    // Fallback to default projectile
-                    pool.SpawnProjectile(transform.position, direction, 10f, ability.damage, 3f);
-                }
-            }
-            else
-            {
-                // Fallback: create simple effect
-                Debug.Log($"Ability {ability.name} effect spawned at {targetPosition}");
-            }
+            //     if (availableFlyweights.Contains(flyweightName))
+            //     {
+            //         pool.SpawnProjectileWithFlyweight(transform.position, direction, flyweightName);
+            //     }
+            //     else
+            //     {
+            //         // Fallback to default projectile
+            //         pool.SpawnProjectile(transform.position, direction, 10f, ability.damage, 3f);
+            //     }
+            // }
+            // else
+            // {
+                // Fallback: create simple effect (now main path)
+                Debug.Log($"[AbilitySystem] Ability {ability.name} effect at {targetPosition} (projectile system disabled)");
+                
+                // Create placeholder visual effect
+                GameObject effect = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                effect.transform.position = targetPosition;
+                effect.transform.localScale = Vector3.one * 0.5f;
+                effect.GetComponent<Renderer>().material.color = Color.yellow;
+                Object.Destroy(effect, 1f);
+            // }
         }
 
         private string GetFlyweightNameForAbility(string abilityName)

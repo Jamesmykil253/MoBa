@@ -159,11 +159,24 @@ namespace MOBA
         {
             if (playerController == null) return;
 
-            // Check for damage (this would normally come from damage events)
-            // For demo purposes, we'll check for health changes
+            // FIXED: Only handle death if health is actually 0 AND player took damage recently
+            // This prevents automatic death loops from initialization issues
             if (playerController.Health <= 0 && !stateMachine.IsInState<DeadState>())
             {
-                stateMachine.HandleDeath();
+                // Only trigger death if this is a legitimate death (not initialization)
+                // Check if player has been alive for at least 1 second before allowing death
+                if (Time.time > 1f)
+                {
+                    stateMachine.HandleDeath();
+                    Debug.Log("[StateMachineIntegration] Player death triggered - Health: " + playerController.Health);
+                }
+            }
+
+            // FIXED: If player has health but is in dead state, transition back to alive
+            if (playerController.Health > 0 && stateMachine.IsInState<DeadState>())
+            {
+                stateMachine.ChangeState<IdleState>();
+                Debug.Log("[StateMachineIntegration] Player revived - Health: " + playerController.Health);
             }
 
             // Check for stun effects

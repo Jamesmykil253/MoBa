@@ -7,44 +7,141 @@ namespace MOBA
     /// <summary>
     /// Custom EventBus implementation for damage system notifications
     /// Observer Pattern based on Game Programming Patterns
+    /// Enhanced with proper cleanup and memory management
     /// </summary>
     public static class EventBus
     {
         private static readonly Dictionary<Type, List<object>> subscribers = new();
+        private static readonly object lockObject = new object(); // Thread safety
 
         public static void Subscribe<T>(Action<T> handler) where T : IEvent
         {
-            var eventType = typeof(T);
-            if (!subscribers.ContainsKey(eventType))
+            if (handler == null) return;
+            
+            lock (lockObject)
             {
-                subscribers[eventType] = new List<object>();
+                var eventType = typeof(T);
+                if (!subscribers.ContainsKey(eventType))
+                {
+                    subscribers[eventType] = new List<object>();
+                }
+                
+                // Prevent duplicate subscriptions
+                if (!subscribers[eventType].Contains(handler))
+                {
+                    subscribers[eventType].Add(handler);
+                }
             }
-            subscribers[eventType].Add(handler);
         }
 
         public static void Unsubscribe<T>(Action<T> handler) where T : IEvent
         {
-            var eventType = typeof(T);
-            if (subscribers.ContainsKey(eventType))
+            if (handler == null) return;
+            
+            lock (lockObject)
             {
-                subscribers[eventType].Remove(handler);
+                var eventType = typeof(T);
+                if (subscribers.ContainsKey(eventType))
+                {
+                    subscribers[eventType].Remove(handler);
+                    
+                    // Clean up empty lists to prevent memory leaks
+                    if (subscribers[eventType].Count == 0)
+                    {
+                        subscribers.Remove(eventType);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Unsubscribe all handlers for a specific event type
+        /// </summary>
+        public static void UnsubscribeAll<T>() where T : IEvent
+        {
+            lock (lockObject)
+            {
+                var eventType = typeof(T);
+                if (subscribers.ContainsKey(eventType))
+                {
+                    subscribers[eventType].Clear();
+                    subscribers.Remove(eventType);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Clear all subscriptions - useful for cleanup
+        /// </summary>
+        public static void ClearAll()
+        {
+            lock (lockObject)
+            {
+                foreach (var list in subscribers.Values)
+                {
+                    list.Clear();
+                }
+                subscribers.Clear();
             }
         }
 
         public static void Publish<T>(T eventData) where T : IEvent
         {
+            if (eventData == null) return;
+            
+            List<object> eventSubscribers = null;
             var eventType = typeof(T);
-            if (subscribers.ContainsKey(eventType))
+            
+            // Copy subscribers list to avoid modification during iteration
+            lock (lockObject)
             {
-                foreach (var handler in subscribers[eventType])
+                if (subscribers.ContainsKey(eventType))
+                {
+                    eventSubscribers = new List<object>(subscribers[eventType]);
+                }
+            }
+            
+            if (eventSubscribers != null)
+            {
+                var deadHandlers = new List<object>();
+                
+                foreach (var handler in eventSubscribers)
                 {
                     try
                     {
-                        ((Action<T>)handler)?.Invoke(eventData);
+                        if (handler is Action<T> typedHandler)
+                        {
+                            typedHandler.Invoke(eventData);
+                        }
+                        else
+                        {
+                            deadHandlers.Add(handler);
+                        }
                     }
                     catch (Exception e)
                     {
                         Debug.LogError($"Error handling event {eventType.Name}: {e.Message}");
+                        deadHandlers.Add(handler); // Remove problematic handlers
+                    }
+                }
+                
+                // Clean up dead handlers
+                if (deadHandlers.Count > 0)
+                {
+                    lock (lockObject)
+                    {
+                        if (subscribers.ContainsKey(eventType))
+                        {
+                            foreach (var deadHandler in deadHandlers)
+                            {
+                                subscribers[eventType].Remove(deadHandler);
+                            }
+                            
+                            if (subscribers[eventType].Count == 0)
+                            {
+                                subscribers.Remove(eventType);
+                            }
+                        }
                     }
                 }
             }

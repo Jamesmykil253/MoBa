@@ -22,7 +22,7 @@ namespace MOBA.Networking
         [SerializeField] private float inputBufferSize = 0.1f; // 100ms input buffer
 
         [Header("Movement Settings")]
-        [SerializeField] private float moveSpeed = 350f;
+        [SerializeField] private float moveSpeed = 8f;  // FIXED: Reduced from 350f to 8f
         [SerializeField] private float jumpForce = 8f;
         [SerializeField] private float doubleJumpForce = 6f;
         [SerializeField] private float maxSpeed = 15f; // Anti-cheat speed limit
@@ -43,13 +43,14 @@ namespace MOBA.Networking
         // Client prediction with reconciliation - Thread-safe implementation
         private Vector3 predictedPosition;
         private Vector3 predictedVelocity;
-        private readonly ConcurrentQueue<ClientInput> pendingInputs = new ConcurrentQueue<ClientInput>(); // Thread-safe queue
-        private readonly ConcurrentQueue<ClientInput> processedInputs = new ConcurrentQueue<ClientInput>(); // Thread-safe queue
-        private volatile float lastServerUpdate; // Volatile for thread safety
+        private readonly Queue<ClientInput> pendingInputs = new Queue<ClientInput>(); // Simplified to single-threaded
+        private readonly Queue<ClientInput> processedInputs = new Queue<ClientInput>(); 
+        private readonly object inputLock = new object(); // Explicit lock for input operations
+        private float lastServerUpdate;
         private Coroutine inputCoroutine;
         private Vector3 lastSentPosition;
         private const float POSITION_SEND_THRESHOLD = 0.01f;
-        private const int MAX_PENDING_INPUTS = 100; // Buffer overflow protection - Pragmatic Programmer principle
+        private const int MAX_PENDING_INPUTS = 50; // Reduced buffer size for better performance
 
         // Anti-cheat and validation
         private float lastAbilityCastTime;
@@ -142,8 +143,14 @@ namespace MOBA.Networking
             }
 
             // Clear input buffers to prevent memory leaks
-            while (pendingInputs.TryDequeue(out _)) { }
-            while (processedInputs.TryDequeue(out _)) { }
+            lock (inputLock)
+            {
+                pendingInputs.Clear();
+                processedInputs.Clear();
+            }
+            
+            // Clear position history
+            positionHistory.Clear();
         }
 
         private void Update()
@@ -298,31 +305,35 @@ namespace MOBA.Networking
                 if (timeSinceLastSend >= inputBufferSize)
                 {
                     // Check buffer overflow protection - defensive programming
-                    if (pendingInputs.Count >= MAX_PENDING_INPUTS)
+                    lock (inputLock)
                     {
-                        Debug.LogWarning("[NetworkPlayerController] Input buffer overflow, dropping oldest inputs");
-                        // Clear some old inputs to prevent memory issues
-                        for (int i = 0; i < MAX_PENDING_INPUTS / 2; i++)
+                        if (pendingInputs.Count >= MAX_PENDING_INPUTS)
                         {
-                            pendingInputs.TryDequeue(out _);
+                            Debug.LogWarning("[NetworkPlayerController] Input buffer overflow, dropping oldest inputs");
+                            // Clear some old inputs to prevent memory issues
+                            int itemsToRemove = MAX_PENDING_INPUTS / 2;
+                            for (int i = 0; i < itemsToRemove && pendingInputs.Count > 0; i++)
+                            {
+                                pendingInputs.Dequeue();
+                            }
                         }
+
+                        // Collect current input
+                        ClientInput input = new ClientInput
+                        {
+                            movement = movementInput,
+                            jump = false, // Will be set by input system
+                            abilityCast = false,
+                            abilityTarget = aimDirection,
+                            timestamp = Time.time
+                        };
+
+                        // Add to pending inputs
+                        pendingInputs.Enqueue(input);
+
+                        // Send to server
+                        SubmitInputServerRpc(input);
                     }
-
-                    // Collect current input
-                    ClientInput input = new ClientInput
-                    {
-                        movement = movementInput,
-                        jump = false, // Will be set by input system
-                        abilityCast = false,
-                        abilityTarget = aimDirection,
-                        timestamp = Time.time
-                    };
-
-                    // Thread-safe enqueue
-                    pendingInputs.Enqueue(input);
-
-                    // Send to server
-                    SubmitInputServerRpc(input);
 
                     timeSinceLastSend = 0f;
                 }
@@ -356,10 +367,23 @@ namespace MOBA.Networking
 
         private bool ValidateInput(ClientInput input)
         {
-            // Speed validation
+            // Basic movement validation
             if (input.movement.magnitude > 1.5f)
             {
                 Debug.LogWarning($"[NetworkPlayerController] Invalid movement magnitude: {input.movement.magnitude}");
+                return false;
+            }
+
+            // Position validation - prevent teleportation
+            if (ValidatePlayerPosition(input))
+            {
+                return false;
+            }
+
+            // Timestamp validation
+            if (Mathf.Abs(input.timestamp - Time.time) > 2f) // 2 second tolerance
+            {
+                Debug.LogWarning($"[NetworkPlayerController] Invalid timestamp: {input.timestamp} vs {Time.time}");
                 return false;
             }
 
@@ -368,6 +392,79 @@ namespace MOBA.Networking
             {
                 Debug.LogWarning("[NetworkPlayerController] Ability rate limit exceeded");
                 return false;
+            }
+
+            // Input sequence validation
+            if (!ValidateInputSequence(input))
+            {
+                Debug.LogWarning("[NetworkPlayerController] Invalid input sequence detected");
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Validate player position changes to prevent teleportation hacks
+        /// </summary>
+        private bool ValidatePlayerPosition(ClientInput input)
+        {
+            if (lastValidPosition == Vector3.zero)
+            {
+                lastValidPosition = transform.position;
+                return true;
+            }
+
+            // Calculate maximum possible movement distance
+            float deltaTime = input.timestamp - lastInputTime;
+            float maxDistance = maxSpeed * deltaTime * 1.2f; // 20% tolerance for network lag
+
+            // Check if movement is within reasonable bounds
+            Vector3 newPosition = transform.position + input.movement * moveSpeed * deltaTime;
+            float actualDistance = Vector3.Distance(lastValidPosition, newPosition);
+
+            if (actualDistance > maxDistance)
+            {
+                speedViolationCount++;
+                if (speedViolationCount > 5) // Allow some tolerance
+                {
+                    Debug.LogError($"[NetworkPlayerController] Speed violation detected: {actualDistance} > {maxDistance}");
+                    return false;
+                }
+            }
+            else
+            {
+                speedViolationCount = Mathf.Max(0, speedViolationCount - 1); // Reduce violation count for good behavior
+                lastValidPosition = newPosition;
+            }
+
+            lastInputTime = input.timestamp;
+            return true;
+        }
+
+        /// <summary>
+        /// Validate input sequences to detect automated/scripted behavior
+        /// </summary>
+        private bool ValidateInputSequence(ClientInput input)
+        {
+            // Check for impossible input patterns (e.g., perfect repeated movements)
+            // This is a simplified implementation - real anti-cheat would be more sophisticated
+            
+            lock (inputLock)
+            {
+                if (pendingInputs.Count > 0)
+                {
+                    var lastInput = pendingInputs.ToArray()[pendingInputs.Count - 1];
+                    
+                    // Check for identical inputs (potential bot behavior)
+                    if (Vector3.Distance(input.movement, lastInput.movement) < 0.001f &&
+                        input.jump == lastInput.jump &&
+                        input.abilityCast == lastInput.abilityCast &&
+                        Mathf.Abs(input.timestamp - lastInput.timestamp) < 0.016f) // Less than one frame
+                    {
+                        return false; // Identical input too quickly
+                    }
+                }
             }
 
             return true;

@@ -315,11 +315,28 @@ namespace MOBA
 
         private void OnPrimaryAttack(InputAction.CallbackContext context)
         {
+            // FIXED: Ensure projectiles spawn from player, not camera
+            Vector3 playerPosition = transform.position + transform.forward * 1f + Vector3.up * 0.5f;
+            
             // Create and execute primary attack command
             if (commandManager != null && abilitySystem != null)
             {
                 var command = new AbilityCommand(abilitySystem, new AbilityData { name = "PrimaryAttack" }, aimPosition);
                 commandManager.ExecuteCommand(command);
+            }
+            
+            // FALLBACK: If command system doesn't work, spawn projectile directly
+            var projectilePool = FindAnyObjectByType<ProjectilePool>();
+            if (projectilePool != null)
+            {
+                Vector3 direction = (aimPosition - playerPosition).normalized;
+                if (direction.magnitude < 0.1f) // If no aim direction, use forward
+                {
+                    direction = transform.forward;
+                }
+                
+                projectilePool.SpawnProjectile(playerPosition, direction, 15f, 50f, 3f);
+                Debug.Log($"[InputRelay] Direct projectile spawn from player position: {playerPosition}");
             }
         }
 
@@ -416,8 +433,13 @@ namespace MOBA
             }
             else
             {
-                // Regular camera panning
-                Debug.Log($"Camera pan input received: {inputValue}");
+                // FIXED: Suppress camera pan logging to reduce spam
+                // Camera panning is handled by the camera controller directly
+                // Only log if input is significant and not too frequent
+                if (inputValue.magnitude > 1f && Time.frameCount % 300 == 0) // Log every 5 seconds max
+                {
+                    Debug.Log($"[InputRelay] Significant camera pan detected: {inputValue}");
+                }
             }
         }
 

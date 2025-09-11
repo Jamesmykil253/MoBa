@@ -8,12 +8,10 @@ namespace MOBA
     /// </summary>
     public class MOBACharacterController : MonoBehaviour
     {
-        [Header("Movement Settings")]
-        [SerializeField] private float moveSpeed = 350f;
-        [SerializeField] private float jumpForce = 8f;
-        [SerializeField] private float doubleJumpForce = 6f;
-
-        // Public properties for state access
+    [Header("Movement Settings")]
+    [SerializeField] private float moveSpeed = 8f;  // FIXED: Reduced from 350f to 8f
+    [SerializeField] private float jumpForce = 8f;
+    [SerializeField] private float doubleJumpForce = 6f;        // Public properties for state access
         public float JumpForce => jumpForce;
         public float DoubleJumpForce => doubleJumpForce;
 
@@ -140,9 +138,16 @@ namespace MOBA
 
         private void FixedUpdate()
         {
-            // Basic movement - state machine will handle modifications
-            if (movementInput != Vector3.zero)
+            // FIXED: Ensure movement is properly applied even if rigidbody is kinematic
+            if (movementInput != Vector3.zero && rb != null)
             {
+                // Ensure rigidbody is not kinematic for movement
+                if (rb.isKinematic)
+                {
+                    rb.isKinematic = false;
+                    Debug.Log("[MOBACharacterController] Rigidbody was kinematic, enabling physics for movement");
+                }
+                
                 // Calculate movement direction relative to camera
                 Vector3 cameraForward = Camera.main != null ? Camera.main.transform.forward : Vector3.forward;
                 Vector3 cameraRight = Camera.main != null ? Camera.main.transform.right : Vector3.right;
@@ -154,7 +159,19 @@ namespace MOBA
                 cameraRight.Normalize();
 
                 Vector3 moveDirection = cameraRight * movementInput.x + cameraForward * movementInput.z;
-                rb.linearVelocity = moveDirection * moveSpeed + Vector3.up * rb.linearVelocity.y;
+                Vector3 targetVelocity = moveDirection * moveSpeed;
+                
+                // Preserve Y velocity for gravity/jumping
+                targetVelocity.y = rb.linearVelocity.y;
+                
+                // Apply movement with more responsive interpolation
+                rb.linearVelocity = Vector3.Lerp(rb.linearVelocity, targetVelocity, Time.fixedDeltaTime * 10f);
+                
+                // Debug movement every 60 frames
+                if (Time.fixedDeltaTime > 0 && Time.fixedTime % 1f < Time.fixedDeltaTime)
+                {
+                    Debug.Log($"[MOBACharacterController] Movement applied - Input: {movementInput:F2}, Velocity: {rb.linearVelocity:F2}");
+                }
             }
         }
 

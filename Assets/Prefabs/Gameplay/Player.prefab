@@ -99,11 +99,13 @@ GameObject:
   - component: {fileID: 294522608438513640}
   - component: {fileID: 4947915600102369042}
   - component: {fileID: 6647771403647469425}
-  - component: {fileID: 6226897281517768830}
   - component: {fileID: 6061923465772384636}
   - component: {fileID: 6163285658464615625}
   - component: {fileID: 4328912101079346709}
   - component: {fileID: 1704504259617861807}
+  - component: {fileID: 1632858974275810654}
+  - component: {fileID: 4655011253182019358}
+  - component: {fileID: 1517589228144191206}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -189,10 +191,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: dbfd3c5fae8674a39abbc82d5ab5c51d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  inputRelay: {fileID: 6061923465772384636}
-  characterController: {fileID: 6647771403647469425}
+  inputRelay: {fileID: 4655011253182019358}
+  characterController: {fileID: 1517589228144191206}
   commandManager: {fileID: 0}
   abilitySystem: {fileID: 0}
+  projectilePool: {fileID: 0}
   maxHealth: 1000
   currentHealth: 0
   playerId: 0
@@ -220,36 +223,6 @@ MonoBehaviour:
   doubleJumpForce: 6
   rb: {fileID: 294522608438513640}
   groundCollider: {fileID: 0}
---- !u!114 &6226897281517768830
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8997694333025010549}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 62899f850307741f2a39c98a8b639597, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_Actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
-  m_NotificationBehavior: 0
-  m_UIInputModule: {fileID: 0}
-  m_DeviceLostEvent:
-    m_PersistentCalls:
-      m_Calls: []
-  m_DeviceRegainedEvent:
-    m_PersistentCalls:
-      m_Calls: []
-  m_ControlsChangedEvent:
-    m_PersistentCalls:
-      m_Calls: []
-  m_ActionEvents: []
-  m_NeverAutoSwitchControlSchemes: 0
-  m_DefaultControlScheme: 
-  m_DefaultActionMap: 
-  m_SplitScreenIndex: -1
-  m_Camera: {fileID: 0}
 --- !u!114 &6061923465772384636
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -297,8 +270,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  GlobalObjectIdHash: 2490070522
-  InScenePlacedSourceGlobalObjectIdHash: 0
+  GlobalObjectIdHash: 1907068963
+  InScenePlacedSourceGlobalObjectIdHash: 1709728083
   DeferredDespawnTick: 0
   Ownership: 1
   AlwaysReplicateAsRoot: 0
@@ -332,3 +305,68 @@ MonoBehaviour:
   doubleJumpForce: 6
   maxSpeed: 15
   maxHealth: 1000
+--- !u!114 &1632858974275810654
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8997694333025010549}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 62899f850307741f2a39c98a8b639597, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Actions: {fileID: -944628639613478452, guid: 0a811e682a59b444fa32c4250cfe852f, type: 3}
+  m_NotificationBehavior: 0
+  m_UIInputModule: {fileID: 0}
+  m_DeviceLostEvent:
+    m_PersistentCalls:
+      m_Calls: []
+  m_DeviceRegainedEvent:
+    m_PersistentCalls:
+      m_Calls: []
+  m_ControlsChangedEvent:
+    m_PersistentCalls:
+      m_Calls: []
+  m_ActionEvents: []
+  m_NeverAutoSwitchControlSchemes: 0
+  m_DefaultControlScheme: 
+  m_DefaultActionMap: Player
+  m_SplitScreenIndex: -1
+  m_Camera: {fileID: 0}
+--- !u!114 &4655011253182019358
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8997694333025010549}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0b2d8711dc71541f894671a3ad68bf89, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  characterController: {fileID: 1517589228144191206}
+  commandManager: {fileID: 0}
+  abilitySystem: {fileID: 0}
+  holdToAimSystem: {fileID: 0}
+  cryptoCoinSystem: {fileID: 0}
+  rsbCombatSystem: {fileID: 0}
+--- !u!114 &1517589228144191206
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8997694333025010549}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4ccb845096ff14f3eb72e972309ef3c4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  moveSpeed: 350
+  jumpForce: 8
+  doubleJumpForce: 6
+  rb: {fileID: 294522608438513640}
+  groundCollider: {fileID: 0}

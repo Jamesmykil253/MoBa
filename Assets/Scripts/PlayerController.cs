@@ -17,7 +17,7 @@ namespace MOBA
         [SerializeField] private MOBACharacterController characterController;
         [SerializeField] private CommandManager commandManager;
         [SerializeField] private AbilitySystem abilitySystem;
-        [SerializeField] private ProjectilePool projectilePool; // Manual assignment required
+        // [SerializeField] private ProjectilePool projectilePool; // DISABLED: Projectile system removed for development
 
         [Header("Player Stats")]
         [SerializeField] private float maxHealth = 1000f;
@@ -25,7 +25,7 @@ namespace MOBA
         [SerializeField] private int playerId;
 
         [Header("Movement Settings")]
-        [SerializeField] private float baseMoveSpeed = 350f;
+        [SerializeField] private float baseMoveSpeed = 8f;  // FIXED: Reduced from 350f to 8f
         [SerializeField] private float jumpForce = 8f;
         [SerializeField] private float doubleJumpForce = 6f;
 
@@ -110,25 +110,48 @@ namespace MOBA
                 }
             }
 
-            // Find CommandManager (manual setup required)
-            if (commandManager == null && Application.isPlaying)
+            // Enhanced dependency injection - automatic discovery with fallback
+            if (commandManager == null)
             {
-                // commandManager = FindAnyObjectByType<CommandManager>(); // REMOVED: Manual setup required
+                commandManager = FindAnyObjectByType<CommandManager>();
                 if (commandManager == null)
                 {
-                    Debug.LogWarning("[PlayerController] CommandManager not assigned. Use SetCommandManager() to assign manually.");
+                    Debug.LogWarning("[PlayerController] CommandManager not found. Create one in the scene or assign manually.");
+                }
+                else
+                {
+                    Debug.Log("[PlayerController] CommandManager auto-discovered successfully.");
                 }
             }
 
-            // Find AbilitySystem (manual setup required)
-            if (abilitySystem == null && Application.isPlaying)
+            // Enhanced AbilitySystem discovery
+            if (abilitySystem == null)
             {
-                // abilitySystem = FindAnyObjectByType<AbilitySystem>(); // REMOVED: Manual setup required
+                abilitySystem = FindAnyObjectByType<AbilitySystem>();
                 if (abilitySystem == null)
                 {
-                    Debug.LogWarning("[PlayerController] AbilitySystem not assigned. Use SetAbilitySystem() to assign manually.");
+                    Debug.LogWarning("[PlayerController] AbilitySystem not found. Create one in the scene or assign manually.");
+                }
+                else
+                {
+                    Debug.Log("[PlayerController] AbilitySystem auto-discovered successfully.");
                 }
             }
+
+            // DISABLED: ProjectilePool discovery commented out - projectile system removed
+            // Enhanced ProjectilePool discovery
+            // if (projectilePool == null)
+            // {
+            //     projectilePool = FindAnyObjectByType<ProjectilePool>();
+            //     if (projectilePool == null)
+            //     {
+            //         Debug.LogWarning("[PlayerController] ProjectilePool not found. Create one in the scene or assign manually.");
+            //     }
+            //     else
+            //     {
+            //         Debug.Log("[PlayerController] ProjectilePool auto-discovered successfully.");
+            //     }
+            // }
         }
 
         private void InitializeStats()
@@ -202,11 +225,13 @@ namespace MOBA
                 Vector2 worldMousePos = Camera.main.ScreenToWorldPoint(mousePosition);
                 aimDirection = (worldMousePos - (Vector2)transform.position).normalized;
 
-                // Debug logging for aim direction
-                if (Time.frameCount % 120 == 0) // Log every 2 seconds
+                // Reduced logging frequency for performance
+                #if UNITY_EDITOR
+                if (Time.frameCount % 300 == 0) // Log every 5 seconds in editor only
                 {
                     Debug.Log($"[PlayerController] Aim direction: {aimDirection:F2}, Mouse pos: {mousePosition}");
                 }
+                #endif
             }
         }
 
@@ -252,11 +277,13 @@ namespace MOBA
         {
             movementInput = input;
 
-            // Debug logging for input
-            if (input != Vector3.zero && Time.frameCount % 30 == 0) // Log every 30 frames
+            // Reduced logging for performance - only in editor
+            #if UNITY_EDITOR
+            if (input != Vector3.zero && Time.frameCount % 60 == 0) // Log every 60 frames in editor only
             {
                 Debug.Log($"[PlayerController] Movement input received: {input:F2}");
             }
+            #endif
 
             // Relay to character controller
             if (characterController != null)
@@ -478,17 +505,20 @@ namespace MOBA
 
         private void SpawnCoinPickup(int amount)
         {
+            // DISABLED: Projectile system removed - coin pickup spawning disabled
             // Use object pool to spawn coin pickup (manual pool reference required)
             // var pool = FindAnyObjectByType<ProjectilePool>(); // REMOVED: Manual setup required
-            if (projectilePool != null)
-            {
-                Debug.Log($"Dropped {amount} coins at death location");
-                // Implement coin spawning logic here when pool is manually assigned
-            }
-            else
-            {
-                Debug.LogWarning("ProjectilePool not assigned - cannot spawn coin pickup. Use SetProjectilePool() to assign manually.");
-            }
+            // if (projectilePool != null)
+            // {
+            //     Debug.Log($"Dropped {amount} coins at death location");
+            //     // Implement coin spawning logic here when pool is manually assigned
+            // }
+            // else
+            // {
+            //     Debug.LogWarning("ProjectilePool not assigned - cannot spawn coin pickup. Use SetProjectilePool() to assign manually.");
+            // }
+            
+            Debug.Log($"[PlayerController] Would drop {amount} coins at death location (projectile system disabled)");
         }
 
 

@@ -1,20 +1,23 @@
 using System.Collections.Generic;
 using UnityEngine;
+using System;
 
 namespace MOBA
 {
     /// <summary>
     /// Generic Object Pool implementation based on Game Programming Patterns
     /// Manages reusable objects to prevent frequent instantiation/destruction
+    /// Enhanced with proper disposal and memory management
     /// </summary>
     /// <typeparam name="T">Type of object to pool, must be a Component</typeparam>
-    public class ObjectPool<T> where T : Component
+    public class ObjectPool<T> : IDisposable where T : Component
     {
         private readonly Queue<T> availableObjects = new Queue<T>();
         private readonly List<T> allObjects = new List<T>();
         private readonly T prefab;
         private readonly Transform parent;
         private readonly int initialSize;
+        private bool disposed = false;
 
         /// <summary>
         /// Creates a new object pool
@@ -41,6 +44,8 @@ namespace MOBA
         /// <returns>Available object from the pool</returns>
         public T Get()
         {
+            if (disposed) throw new ObjectDisposedException(nameof(ObjectPool<T>));
+            
             T obj;
             if (availableObjects.Count > 0)
             {
@@ -51,7 +56,10 @@ namespace MOBA
                 obj = CreateNewObject();
             }
 
-            obj.gameObject.SetActive(true);
+            if (obj != null)
+            {
+                obj.gameObject.SetActive(true);
+            }
             return obj;
         }
 
@@ -61,10 +69,13 @@ namespace MOBA
         /// <param name="obj">Object to return to the pool</param>
         public void Return(T obj)
         {
-            if (obj == null) return;
+            if (disposed || obj == null) return;
 
             obj.gameObject.SetActive(false);
-            availableObjects.Enqueue(obj);
+            if (!availableObjects.Contains(obj))
+            {
+                availableObjects.Enqueue(obj);
+            }
         }
 
         /// <summary>
@@ -87,6 +98,8 @@ namespace MOBA
         /// <returns>Newly created object</returns>
         private T CreateNewObject()
         {
+            if (disposed) return null;
+            
             // Create new instance from the prefab
             if (prefab == null)
             {
@@ -94,18 +107,39 @@ namespace MOBA
                 return null;
             }
 
-            GameObject newObj = Object.Instantiate(prefab.gameObject, parent);
+            GameObject newObj = UnityEngine.Object.Instantiate(prefab.gameObject, parent);
             T component = newObj.GetComponent<T>();
             
             if (component == null)
             {
                 Debug.LogError($"[ObjectPool] Prefab object {prefab.gameObject.name} does not have component {typeof(T).Name}");
-                Object.Destroy(newObj);
+                UnityEngine.Object.Destroy(newObj);
                 return null;
             }
 
             allObjects.Add(component);
             return component;
+        }
+
+        /// <summary>
+        /// Dispose of all pooled objects and clear collections
+        /// </summary>
+        public void Dispose()
+        {
+            if (disposed) return;
+            
+            // Destroy all pooled objects
+            foreach (var obj in allObjects)
+            {
+                if (obj != null)
+                {
+                    UnityEngine.Object.Destroy(obj.gameObject);
+                }
+            }
+            
+            availableObjects.Clear();
+            allObjects.Clear();
+            disposed = true;
         }
 
         /// <summary>

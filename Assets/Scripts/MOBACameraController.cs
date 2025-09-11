@@ -47,9 +47,6 @@ namespace MOBA.Networking
         [Tooltip("Maximum yaw angle for horizontal panning (degrees)")]
         [SerializeField] private float maxYawAngle = 45f;
 
-        [Tooltip("Pan speed multiplier")]
-        [SerializeField] private float panSpeed = 2f;
-
         [Tooltip("Pan smoothing factor (0-1, higher = smoother)")]
         [SerializeField] private float panSmoothing = 0.1f;
 
@@ -466,24 +463,13 @@ namespace MOBA.Networking
         /// </summary>
         private void UpdatePanInput()
         {
-            // Get mouse input for panning using Input System
-            float mouseX = 0f;
-            if (Mouse.current != null)
-            {
-                mouseX = Mouse.current.delta.x.ReadValue();
-            }
-
-            // Apply pan speed and smoothing
-            if (Mathf.Abs(mouseX) > 0.01f)
-            {
-                float panDelta = mouseX * panSpeed * 0.01f; // Scale down mouse delta
-                targetYaw += panDelta;
-
-                // Clamp to pan limits
-                targetYaw = Mathf.Clamp(targetYaw, minYawAngle, maxYawAngle);
-            }
-
-            // Smooth current yaw towards target yaw
+            // FIXED: Disable camera pan input to prevent unwanted camera movement
+            // Camera should follow player automatically without manual panning
+            
+            // Don't process mouse input for panning
+            // This prevents the "Camera pan input received" messages in the log
+            
+            // Keep current yaw stable
             currentYaw = Mathf.Lerp(currentYaw, targetYaw, panSmoothing);
         }
 

@@ -95,18 +95,48 @@ namespace MOBA.Testing
         
         private void SetupMainCamera()
         {
-            Camera mainCamera = Camera.main;
-            if (mainCamera == null)
+            // Check if there are already cameras in the scene
+            Camera[] existingCameras = FindObjectsByType<Camera>(FindObjectsSortMode.None);
+            
+            if (existingCameras.Length > 0)
             {
-                GameObject cameraGO = new GameObject("Main Camera");
-                mainCamera = cameraGO.AddComponent<Camera>();
-                cameraGO.tag = "MainCamera";
+                Debug.Log($"📷 [QuickMOBASetup] Found {existingCameras.Length} existing camera(s) - using existing camera");
+                Camera mainCamera = null;
+                
+                // Try to find a MainCamera tagged camera first
+                foreach (var cam in existingCameras)
+                {
+                    if (cam.tag == "MainCamera")
+                    {
+                        mainCamera = cam;
+                        break;
+                    }
+                }
+                
+                // If no MainCamera tagged, use the first one
+                if (mainCamera == null)
+                {
+                    mainCamera = existingCameras[0];
+                    mainCamera.tag = "MainCamera";
+                }
+                
+                // Position the existing camera
+                mainCamera.transform.position = cameraPosition;
+                mainCamera.transform.eulerAngles = cameraRotation;
+                
+                Debug.Log($"📷 Configured existing camera: {mainCamera.name}");
+                return;
             }
             
-            mainCamera.transform.position = cameraPosition;
-            mainCamera.transform.eulerAngles = cameraRotation;
+            // Only create new camera if none exist
+            GameObject cameraGO = new GameObject("Main Camera");
+            Camera newCamera = cameraGO.AddComponent<Camera>();
+            cameraGO.tag = "MainCamera";
             
-            Debug.Log("📷 Setup main camera");
+            newCamera.transform.position = cameraPosition;
+            newCamera.transform.eulerAngles = cameraRotation;
+            
+            Debug.Log("📷 Created new main camera");
         }
         
         private void CreateTestingFramework()
