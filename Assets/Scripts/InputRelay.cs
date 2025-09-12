@@ -11,18 +11,16 @@ namespace MOBA
     public class InputRelay : MonoBehaviour
     {
         [Header("State Machine")]
-        [SerializeField] private MOBACharacterController characterController;
+        [SerializeField] private UnifiedPlayerController characterController;
 
         [Header("Command System")]
-        [SerializeField] private CommandManager commandManager;
         [SerializeField] private AbilitySystem abilitySystem;
         [SerializeField] private HoldToAimSystem holdToAimSystem;
         [SerializeField] private CryptoCoinSystem cryptoCoinSystem;
         [SerializeField] private RSBCombatSystem rsbCombatSystem;
 
         // Public properties for external access
-        public MOBACharacterController CharacterController => characterController;
-        public CommandManager CommandManager => commandManager;
+        public UnifiedPlayerController CharacterController => characterController;
         public AbilitySystem AbilitySystem => abilitySystem;
         public HoldToAimSystem HoldToAimSystem => holdToAimSystem;
         public CryptoCoinSystem CryptoCoinSystem => cryptoCoinSystem;
@@ -54,17 +52,47 @@ namespace MOBA
         {
             // Get PlayerInput component
             playerInput = GetComponent<PlayerInput>();
+            
+            if (playerInput == null)
+            {
+                Debug.LogError("[InputRelay] No PlayerInput component found. Adding one...");
+                playerInput = gameObject.AddComponent<PlayerInput>();
+            }
 
             // Load input actions if not assigned
             if (inputActions == null)
             {
-                // Use the InputActionAsset from the PlayerInput component if available
-                inputActions = playerInput.actions;
-                if (inputActions != null && playerInput != null)
+                // Try to load from Resources first
+                inputActions = Resources.Load<InputActionAsset>("InputSystem_Actions");
+                
+                if (inputActions == null)
                 {
-                    playerInput.actions = inputActions;
-                    Debug.Log("[InputRelay] ✅ InputActions loaded successfully");
+                    // Try to find any InputActionAsset in the project
+                    var foundAssets = Resources.FindObjectsOfTypeAll<InputActionAsset>();
+                    if (foundAssets.Length > 0)
+                    {
+                        inputActions = foundAssets[0];
+                        Debug.Log($"[InputRelay] Found InputActionAsset: {inputActions.name}");
+                    }
                 }
+            }
+
+            // Assign actions to PlayerInput
+            if (inputActions != null && playerInput != null)
+            {
+                playerInput.actions = inputActions;
+                
+                // Ensure actions are enabled
+                if (!inputActions.enabled)
+                {
+                    inputActions.Enable();
+                }
+                
+                Debug.Log("[InputRelay] ✅ InputActions loaded and enabled successfully");
+            }
+            else
+            {
+                Debug.LogWarning("[InputRelay] ⚠️ Could not initialize InputActions. Please assign an InputActionAsset.");
             }
         }
 
@@ -77,7 +105,7 @@ namespace MOBA
             // Find dependencies if not assigned - only do this once in Awake
             if (characterController == null)
             {
-                characterController = GetComponent<MOBACharacterController>();
+                characterController = GetComponent<UnifiedPlayerController>();
                 if (characterController == null && Application.isPlaying)
                 {
                     // Only use expensive search as last resort, and cache the result
@@ -86,7 +114,6 @@ namespace MOBA
             }
 
             // Cache other dependencies with null-safe checks
-            CacheDependency(ref commandManager, "CommandManager");
             CacheDependency(ref abilitySystem, "AbilitySystem");
             CacheDependency(ref holdToAimSystem, "HoldToAimSystem");
             CacheDependency(ref cryptoCoinSystem, "CryptoCoinSystem");
@@ -116,18 +143,18 @@ namespace MOBA
         /// <summary>
         /// Specialized method to find character controller with fallback logic
         /// </summary>
-        private MOBACharacterController FindCharacterControllerInScene()
+        private UnifiedPlayerController FindCharacterControllerInScene()
         {
             // Try to find on this GameObject first
-            var controller = GetComponent<MOBACharacterController>();
+            var controller = GetComponent<UnifiedPlayerController>();
             if (controller != null) return controller;
 
             // Try to find on parent
-            controller = GetComponentInParent<MOBACharacterController>();
+            controller = GetComponentInParent<UnifiedPlayerController>();
             if (controller != null) return controller;
 
             // Last resort: search scene (expensive)
-            controller = Object.FindAnyObjectByType<MOBACharacterController>();
+            controller = Object.FindAnyObjectByType<UnifiedPlayerController>();
             if (controller != null)
             {
                 Debug.Log($"[InputRelay] ✅ Found character controller on {controller.gameObject.name}");
@@ -138,6 +165,18 @@ namespace MOBA
 
         private void OnEnable()
         {
+            // Ensure PlayerInput is properly initialized
+            if (playerInput == null)
+            {
+                playerInput = GetComponent<PlayerInput>();
+            }
+
+            // Try to initialize if not already done
+            if (playerInput?.actions == null)
+            {
+                InitializePlayerInput();
+            }
+
             if (playerInput?.actions == null)
             {
                 Debug.LogWarning("[InputRelay] PlayerInput or actions not available");
@@ -306,37 +345,34 @@ namespace MOBA
         {
             Vector2 input2D = context.ReadValue<Vector2>();
             movementInput = new Vector3(input2D.x, 0, input2D.y); // Convert 2D input to 3D movement
+            
+            // FIXED: Ensure movement input is properly cleared when no input
+            if (context.canceled || input2D.magnitude < 0.1f)
+            {
+                movementInput = Vector3.zero;
+            }
         }
 
-        private void OnJump(InputAction.CallbackContext context)
+        public void OnJump(InputAction.CallbackContext context)
         {
-            jumpPressed = true;
+            if (context.performed)
+            {
+                jumpPressed = true;
+            }
         }
 
         private void OnPrimaryAttack(InputAction.CallbackContext context)
         {
-            // FIXED: Ensure projectiles spawn from player, not camera
-            Vector3 playerPosition = transform.position + transform.forward * 1f + Vector3.up * 0.5f;
-            
-            // Create and execute primary attack command
-            if (commandManager != null && abilitySystem != null)
+            // Cast ability directly without command pattern complexity
+            if (abilitySystem != null)
             {
-                var command = new AbilityCommand(abilitySystem, new AbilityData { name = "PrimaryAttack" }, aimPosition);
-                commandManager.ExecuteCommand(command);
+                var abilityData = new AbilityData { name = "PrimaryAttack", damage = 50f };
+                abilitySystem.CastAbility(abilityData, aimPosition);
             }
-            
-            // FALLBACK: If command system doesn't work, spawn projectile directly
-            var projectilePool = FindAnyObjectByType<ProjectilePool>();
-            if (projectilePool != null)
+            else
             {
-                Vector3 direction = (aimPosition - playerPosition).normalized;
-                if (direction.magnitude < 0.1f) // If no aim direction, use forward
-                {
-                    direction = transform.forward;
-                }
-                
-                projectilePool.SpawnProjectile(playerPosition, direction, 15f, 50f, 3f);
-                Debug.Log($"[InputRelay] Direct projectile spawn from player position: {playerPosition}");
+                // Direct attack effect when ability system isn't available
+                Debug.Log($"[InputRelay] Primary attack at position: {aimPosition}");
             }
         }
 
@@ -413,11 +449,11 @@ namespace MOBA
         private void OnUltimateEnd(InputAction.CallbackContext context)
         {
             ultimateHeld = false;
-            // Execute ultimate command when released
-            if (commandManager != null && abilitySystem != null)
+            // Cast ultimate directly without command pattern
+            if (abilitySystem != null)
             {
-                var command = new AbilityCommand(abilitySystem, new AbilityData { name = "Ultimate" }, aimPosition);
-                commandManager.ExecuteCommand(command);
+                var abilityData = new AbilityData { name = "Ultimate", damage = 200f };
+                abilitySystem.CastAbility(abilityData, aimPosition);
             }
         }
 

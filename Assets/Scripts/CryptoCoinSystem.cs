@@ -274,7 +274,7 @@ namespace MOBA
             alliesInScoringRange.Clear();
             
             // Find all player controllers in range (excluding self)
-            var allPlayers = FindObjectsByType<MOBACharacterController>(FindObjectsSortMode.None);
+            var allPlayers = FindObjectsByType<UnifiedPlayerController>(FindObjectsSortMode.None);
             foreach (var player in allPlayers)
             {
                 if (player.transform == transform) continue; // Skip self

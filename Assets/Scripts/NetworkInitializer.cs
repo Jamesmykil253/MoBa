@@ -44,7 +44,7 @@ namespace MOBA
 
             // Initialize other network singletons with proper error handling
             InitializeSingletonSafely<NetworkEventBus>("NetworkEventBus");
-            InitializeSingletonSafely<LagCompensationManager>("LagCompensationManager");
+            // REMOVED: LagCompensationManager was removed during cleanup
             InitializeSingletonSafely<AntiCheatSystem>("AntiCheatSystem");
 
             if (enableDebugLogging)

@@ -13,7 +13,7 @@ namespace MOBA
         private float movementSpeed;
         private const float MIN_MOVEMENT_THRESHOLD = 0.1f;
 
-        public MovingState(MOBACharacterController controller)
+        public MovingState(UnifiedPlayerController controller)
         {
             this.controller = controller;
         }
@@ -111,8 +111,8 @@ namespace MOBA
             // This will be handled by the input system triggering state change
 
             // Check for damage
-            var playerController = controller.GetComponent<PlayerController>();
-            if (playerController != null && playerController.Health <= 0)
+            // Health is now directly on the UnifiedPlayerController
+            if (controller.Health <= 0)
             {
                 // Transition to dead state will be handled by damage system
                 return;

@@ -143,31 +143,33 @@ namespace MOBA.Networking
         private float lastCameraInputTime;
         private int cameraViolationCount;
 
-        // Projectile pooling integration
-        private ProjectilePool projectilePool;
+        // DISABLED: Projectile system removed for development
+        // private ProjectilePool projectilePool;
 
         private void Awake()
         {
             cam = GetComponent<Camera>();
 
-            // REMOVED: FindFirstObjectByType - manual assignment preferred for MOBA best practices
-            // projectilePool = FindFirstObjectByType<ProjectilePool>();
-            projectilePool = null; // Manual assignment required
+            // REMOVED: Projectile system was removed during cleanup
 
             InitializeCameraController(); // PRESERVED: Auto-targeting functionality for MOBA best practices
         }
 
         /// <summary>
+        /// DISABLED: Projectile system removed for development
         /// Manual ProjectilePool setup for MOBA best practices
         /// </summary>
-        public void SetProjectilePool(ProjectilePool pool)
-        {
-            projectilePool = pool;
-            UnityEngine.Debug.Log("[MOBACameraController] ProjectilePool configured manually");
-        }
+        // public void SetProjectilePool(ProjectilePool pool)
+        // {
+        //     projectilePool = pool;
+        //     UnityEngine.Debug.Log("[MOBACameraController] ProjectilePool configured manually");
+        // }
 
         private void InitializeCameraController()
         {
+            // Ensure AudioListener exists on this camera
+            EnsureAudioListener();
+
             // Find target if not assigned
             if (target == null)
             {
@@ -694,11 +696,12 @@ namespace MOBA.Networking
             cameraViolationCount = 0;
             lastValidCameraPosition = transform.position;
 
+            // DISABLED: Projectile system removed for development
             // Initialize projectile pool integration if available
-            if (projectilePool != null)
-            {
-                Debug.Log("[MOBACameraController] Projectile pool integration ready");
-            }
+            // if (projectilePool != null)
+            // {
+            //     Debug.Log("[MOBACameraController] Projectile pool integration ready");
+            // }
         }
 
         /// <summary>
@@ -820,10 +823,12 @@ namespace MOBA.Networking
                 GUILayout.Label($"Violations: {cameraViolationCount}");
             }
 
-            if (projectilePool != null)
-            {
-                GUILayout.Label($"Projectile Pool: Connected");
-            }
+            // DISABLED: Projectile system removed for development
+            // if (projectilePool != null)
+            // {
+            //     GUILayout.Label($"Projectile Pool: Connected");
+            // }
+            GUILayout.Label("Projectile Pool: Disabled for Development");
 
             GUILayout.EndArea();
         }
@@ -843,6 +848,30 @@ namespace MOBA.Networking
         {
             cameraViolationCount = 0;
             Debug.Log("[MOBACameraController] Camera violations reset");
+        }
+
+        /// <summary>
+        /// Ensures this camera has an AudioListener component
+        /// </summary>
+        private void EnsureAudioListener()
+        {
+            if (GetComponent<AudioListener>() == null)
+            {
+                // Check if there are other AudioListeners in the scene
+                AudioListener[] existingListeners = FindObjectsByType<AudioListener>(FindObjectsSortMode.None);
+                
+                if (existingListeners.Length == 0)
+                {
+                    // No AudioListener exists, add one to this camera
+                    gameObject.AddComponent<AudioListener>();
+                    Debug.Log("[CAMERA] Added AudioListener to camera");
+                }
+                else
+                {
+                    // AudioListener exists elsewhere, don't add another
+                    Debug.Log("[CAMERA] AudioListener already exists in scene");
+                }
+            }
         }
     }
 }

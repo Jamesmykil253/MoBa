@@ -9,7 +9,7 @@ namespace MOBA
     /// </summary>
     public class InputHandler : MonoBehaviour
     {
-        [SerializeField] private CommandManager commandManager;
+        [SerializeField] private AbilitySystem commandManager;
         [SerializeField] private AbilitySystem abilitySystem;
 
         private PlayerInput playerInput;
@@ -20,7 +20,7 @@ namespace MOBA
             playerInput = GetComponent<PlayerInput>();
             if (commandManager == null)
             {
-                commandManager = GetComponent<CommandManager>();
+                commandManager = GetComponent<AbilitySystem>();
             }
         }
 
@@ -59,8 +59,7 @@ namespace MOBA
             if (abilitySystem != null)
             {
                 var ability = new AbilityData { name = "Ability1" };
-                var command = new AbilityCommand(abilitySystem, ability, currentTargetPosition);
-                commandManager.ExecuteCommand(command);
+                abilitySystem.CastAbility(ability, currentTargetPosition);
             }
         }
 
@@ -69,8 +68,7 @@ namespace MOBA
             if (abilitySystem != null)
             {
                 var ability = new AbilityData { name = "Ability2" };
-                var command = new AbilityCommand(abilitySystem, ability, currentTargetPosition);
-                commandManager.ExecuteCommand(command);
+                abilitySystem.CastAbility(ability, currentTargetPosition);
             }
         }
 
@@ -79,21 +77,19 @@ namespace MOBA
             if (abilitySystem != null)
             {
                 var ability = new AbilityData { name = "Ultimate" };
-                var command = new AbilityCommand(abilitySystem, ability, currentTargetPosition);
-                commandManager.ExecuteCommand(command);
+                abilitySystem.CastAbility(ability, currentTargetPosition);
             }
         }
 
         /// <summary>
-        /// Creates and executes a command programmatically
+        /// Creates and executes an ability programmatically
         /// </summary>
         public void ExecuteAbilityCommand(string abilityName, Vector2 target)
         {
             if (abilitySystem != null)
             {
                 var ability = new AbilityData { name = abilityName };
-                var command = new AbilityCommand(abilitySystem, ability, target);
-                commandManager.ExecuteCommand(command);
+                abilitySystem.CastAbility(ability, target);
             }
         }
     }

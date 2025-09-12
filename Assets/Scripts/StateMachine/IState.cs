@@ -46,12 +46,12 @@ namespace MOBA
     /// <summary>
     /// Base class for character states with common functionality
     /// </summary>
-    public abstract class CharacterStateBase : IState<MOBACharacterController>
+    public abstract class CharacterStateBase : IState<UnifiedPlayerController>
     {
-        protected MOBACharacterController controller;
+        protected UnifiedPlayerController controller;
         protected float stateTimer;
 
-        public void SetContext(MOBACharacterController context)
+        public void SetContext(UnifiedPlayerController context)
         {
             controller = context;
         }

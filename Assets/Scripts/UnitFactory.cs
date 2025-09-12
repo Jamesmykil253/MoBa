@@ -183,12 +183,8 @@ namespace MOBA
             // Initialize unit-specific components
             InitializeUnitComponents(unit, type);
 
-            // Register with memory manager for tracking
-            var memoryManager = FindAnyObjectByType<MemoryManager>();
-            if (memoryManager != null)
-            {
-                memoryManager.TrackObject(unit, "Units");
-            }
+            // REMOVED: MemoryManager was removed during cleanup
+            // Units are now managed by Unity's standard GameObject lifecycle
 
             Debug.Log($"Created unit: {type} at {position}");
             return unit;

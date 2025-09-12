@@ -257,9 +257,9 @@ namespace MOBA
     /// Specialized state machine for character controllers
     /// Includes additional MOBA-specific functionality
     /// </summary>
-    public class CharacterStateMachine : StateMachine<MOBACharacterController>
+    public class CharacterStateMachine : StateMachine<UnifiedPlayerController>
     {
-        public CharacterStateMachine(MOBACharacterController controller) : base(controller)
+        public CharacterStateMachine(UnifiedPlayerController controller) : base(controller)
         {
             // Register common MOBA character states
             RegisterState(new IdleState(controller));
@@ -278,7 +278,7 @@ namespace MOBA
         /// <summary>
         /// Get the context (controller) for this state machine
         /// </summary>
-        public MOBACharacterController Context => context;
+        public UnifiedPlayerController Context => context;
 
         /// <summary>
         /// Handle input-based state transitions
@@ -328,7 +328,7 @@ namespace MOBA
             // Handle landing
             if (isGrounded && (IsInState<FallingState>() || IsInState<JumpingState>()))
             {
-                if (Context.GetComponent<MOBACharacterController>().MovementInput != Vector3.zero)
+                if (Context.GetComponent<UnifiedPlayerController>().MovementInput != Vector3.zero)
                 {
                     ChangeState<MovingState>();
                 }

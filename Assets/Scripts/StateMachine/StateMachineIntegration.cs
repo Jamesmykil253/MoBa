@@ -8,12 +8,11 @@ namespace MOBA
     /// Shows Observer Pattern usage and integration with all MOBA components
     /// Based on Game Programming Patterns - Observer Pattern for events
     /// </summary>
-    [RequireComponent(typeof(MOBACharacterController))]
+    [RequireComponent(typeof(UnifiedPlayerController))]
     public class StateMachineIntegration : MonoBehaviour
     {
         [Header("State Machine Components")]
-        [SerializeField] private MOBACharacterController characterController;
-        [SerializeField] private PlayerController playerController;
+        [SerializeField] private UnifiedPlayerController characterController;
         [SerializeField] private InputRelay inputRelay;
 
         [Header("Integration Settings")]
@@ -32,12 +31,7 @@ namespace MOBA
             // Get required components
             if (characterController == null)
             {
-                characterController = GetComponent<MOBACharacterController>();
-            }
-
-            if (playerController == null)
-            {
-                playerController = GetComponent<PlayerController>();
+                characterController = GetComponent<UnifiedPlayerController>();
             }
 
             if (inputRelay == null)
@@ -117,25 +111,21 @@ namespace MOBA
         {
             if (characterController == null) return;
 
-            // Get ground state from the character controller (which has improved detection)
+            // HARDCODED: Simple and reliable ground detection following game programming patterns
             bool isGrounded = false;
-            if (characterController.TryGetComponent(out MOBACharacterController mobaController))
+            Vector3 playerPosition = characterController.transform.position;
+            
+            // Raycast downward from player position
+            RaycastHit hit;
+            Vector3 raycastOrigin = playerPosition + Vector3.up * 0.5f; // Start slightly above player
+            
+            // Cast ray down to detect ground (using reasonable distance)
+            isGrounded = Physics.Raycast(raycastOrigin, Vector3.down, out hit, 1.0f);
+            
+            // Alternative: Check if player is close to Y=0 (assuming ground is at Y=0)
+            if (!isGrounded && playerPosition.y <= 0.5f)
             {
-                // Use reflection to access the private isGrounded field
-                var field = typeof(MOBACharacterController).GetField("isGrounded", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                if (field != null)
-                {
-                    isGrounded = (bool)field.GetValue(mobaController);
-                }
-            }
-
-            // Fallback ground detection if reflection fails
-            if (!isGrounded)
-            {
-                RaycastHit hit;
-                Vector3 raycastOrigin = characterController.transform.position + Vector3.up * 0.1f;
-                isGrounded = Physics.Raycast(raycastOrigin, Vector3.down, out hit, 1.2f, LayerMask.GetMask("Ground")) ||
-                           Physics.Raycast(raycastOrigin, Vector3.down, out hit, 1.2f); // Fallback to all layers
+                isGrounded = true;
             }
 
             // Get velocity for physics-based transitions
@@ -157,30 +147,30 @@ namespace MOBA
 
         private void HandleDamageTransitions()
         {
-            if (playerController == null) return;
+            if (characterController == null) return;
 
             // FIXED: Only handle death if health is actually 0 AND player took damage recently
             // This prevents automatic death loops from initialization issues
-            if (playerController.Health <= 0 && !stateMachine.IsInState<DeadState>())
+            if (characterController.Health <= 0 && !stateMachine.IsInState<DeadState>())
             {
                 // Only trigger death if this is a legitimate death (not initialization)
                 // Check if player has been alive for at least 1 second before allowing death
                 if (Time.time > 1f)
                 {
                     stateMachine.HandleDeath();
-                    Debug.Log("[StateMachineIntegration] Player death triggered - Health: " + playerController.Health);
+                    Debug.Log("[StateMachineIntegration] Player death triggered - Health: " + characterController.Health);
                 }
             }
 
             // FIXED: If player has health but is in dead state, transition back to alive
-            if (playerController.Health > 0 && stateMachine.IsInState<DeadState>())
+            if (characterController.Health > 0 && stateMachine.IsInState<DeadState>())
             {
                 stateMachine.ChangeState<IdleState>();
-                Debug.Log("[StateMachineIntegration] Player revived - Health: " + playerController.Health);
+                Debug.Log("[StateMachineIntegration] Player revived - Health: " + characterController.Health);
             }
 
             // Check for stun effects
-            // Note: CharacterStats is a struct, so we'd need to access it through PlayerController
+            // Note: CharacterStats is a struct, so we'd need to access it through UnifiedPlayerController
             // For now, we'll handle stun through damage events
             // if (playerController.IsStunned && !stateMachine.IsInState<StunnedState>())
             // {
@@ -227,7 +217,7 @@ namespace MOBA
                 }
 
                 // Publish UI update event
-                EventBus.Publish(new UIUpdateEvent("HealthChanged", playerController.Health));
+                EventBus.Publish(new UIUpdateEvent("HealthChanged", characterController.Health));
             }
         }
 
@@ -261,7 +251,7 @@ namespace MOBA
         }
 
         // Observer Pattern event handlers
-        private void HandleStateChanged(IState<MOBACharacterController> previousState, IState<MOBACharacterController> newState)
+        private void HandleStateChanged(IState<UnifiedPlayerController> previousState, IState<UnifiedPlayerController> newState)
         {
             totalStateChanges++;
             lastStateChangeTime = Time.time;
@@ -275,7 +265,7 @@ namespace MOBA
             OnStateMachineStateChanged(previousState, newState);
         }
 
-        private void HandleStateEntered(IState<MOBACharacterController> state)
+        private void HandleStateEntered(IState<UnifiedPlayerController> state)
         {
             if (enableStateLogging)
             {
@@ -286,7 +276,7 @@ namespace MOBA
             OnStateMachineStateEntered(state);
         }
 
-        private void HandleStateExited(IState<MOBACharacterController> state)
+        private void HandleStateExited(IState<UnifiedPlayerController> state)
         {
             if (enableStateLogging)
             {
@@ -298,7 +288,7 @@ namespace MOBA
         }
 
         // Integration methods for other systems
-        private void OnStateMachineStateChanged(IState<MOBACharacterController> previousState, IState<MOBACharacterController> newState)
+        private void OnStateMachineStateChanged(IState<UnifiedPlayerController> previousState, IState<UnifiedPlayerController> newState)
         {
             // Notify camera system
             var cameraController = Object.FindAnyObjectByType<MOBACameraController>();
@@ -322,7 +312,7 @@ namespace MOBA
             // Could play state-specific sounds
         }
 
-        private void OnStateMachineStateEntered(IState<MOBACharacterController> state)
+        private void OnStateMachineStateEntered(IState<UnifiedPlayerController> state)
         {
             // Handle state-specific setup
             if (state is DeadState)
@@ -340,7 +330,7 @@ namespace MOBA
             }
         }
 
-        private void OnStateMachineStateExited(IState<MOBACharacterController> state)
+        private void OnStateMachineStateExited(IState<UnifiedPlayerController> state)
         {
             // Handle state-specific cleanup
             if (state is DeadState)
@@ -387,12 +377,12 @@ namespace MOBA
             return stateMachine;
         }
 
-        public bool IsInState<TState>() where TState : IState<MOBACharacterController>
+        public bool IsInState<TState>() where TState : IState<UnifiedPlayerController>
         {
             return stateMachine.IsInState<TState>();
         }
 
-        public void ForceStateChange<TState>() where TState : IState<MOBACharacterController>
+        public void ForceStateChange<TState>() where TState : IState<UnifiedPlayerController>
         {
             stateMachine.ChangeState<TState>();
         }

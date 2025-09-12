@@ -48,7 +48,6 @@ namespace MOBA.UI
         
         // Components
         private LocalTrainingLobby trainingLobby;
-        private TrainingGameManager trainingGameManager;
         
         // State
         private bool isUIInitialized = false;
@@ -139,25 +138,19 @@ namespace MOBA.UI
                 statusText.text = $"Status: {GetFriendlyStateName()}";
             }
             
-            // Update training session info
-            if (trainingGameManager != null && trainingActivePanel.activeInHierarchy)
-            {
-                UpdateTrainingSessionUI();
-            }
+            // Update training session info disabled - system simplified
         }
         
         private void UpdateTrainingSessionUI()
         {
-            var stats = trainingGameManager.GetSessionStats();
-            
             if (sessionTimeText != null)
-                sessionTimeText.text = $"Time: {stats.sessionDuration:F1}s";
+                sessionTimeText.text = $"Time: {Time.time:F1}s";
             
             if (spawnsText != null)
-                spawnsText.text = $"Spawns: {stats.totalSpawns}";
+                spawnsText.text = $"Spawns: 0";
             
             if (deathsText != null)
-                deathsText.text = $"Deaths: {stats.totalDeaths}";
+                deathsText.text = $"Deaths: 0";
         }
         
         private string GetFriendlyStateName()
@@ -191,12 +184,6 @@ namespace MOBA.UI
         public void ShowTrainingActive()
         {
             SetActivePanel(trainingActivePanel);
-            
-            // Find training game manager
-            if (trainingGameManager == null)
-            {
-                trainingGameManager = FindFirstObjectByType<TrainingGameManager>();
-            }
         }
         
         public void ShowSettings()
@@ -262,12 +249,7 @@ namespace MOBA.UI
         
         private void OnRespawnClicked()
         {
-            Debug.Log("[TrainingLobbyUI] Respawn clicked");
-            
-            if (trainingGameManager != null)
-            {
-                trainingGameManager.SpawnTrainingPlayer();
-            }
+            Debug.Log("[TrainingLobbyUI] Respawn clicked - simplified training system");
         }
         
         private void OnEndTrainingClicked()

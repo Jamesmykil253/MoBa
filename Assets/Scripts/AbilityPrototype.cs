@@ -147,7 +147,9 @@ namespace MOBA
                 cooldown = cooldown,
                 icon = icon,
                 effectColor = Color.white,
-                isProjectile = true,
+                // DISABLED: Projectile system removed for development
+                // isProjectile = true,
+                isInstantCast = true, // Replaced projectile with instant cast for development
                 homing = isHoming,
                 hitLayers = -1,
                 damageType = damageType,
@@ -230,42 +232,27 @@ namespace MOBA
         {
             InitializeCache();
 
-            // REMOVED: FindAnyObjectByType - manual setup required for MOBA best practices
-            // var memoryManager = FindAnyObjectByType<MemoryManager>();
-            MemoryManager memoryManager = null; // Manual assignment required
+            // REMOVED: MemoryManager was removed during cleanup
+            // Memory management is now handled by Unity's garbage collector
             
-            if (memoryManager != null)
+            // Initialize ability cache for performance
+            foreach (var prototype in abilityPrototypes)
             {
-                foreach (var prototype in abilityPrototypes)
+                if (prototype != null)
                 {
-                    if (prototype != null)
-                    {
-                        memoryManager.TrackObject(prototype, "AbilityPrototypes");
-                    }
+                    // Memory tracking removed - Unity handles GC automatically
+                    Debug.Log($"Initialized ability prototype: {prototype.name}");
                 }
-            }
-            else
-            {
-                UnityEngine.Debug.LogWarning("[AbilityPrototype] MemoryManager not assigned - use SetMemoryManager()");
             }
         }
 
         /// <summary>
-        /// Manual memory manager setup for MOBA best practices
+        /// Memory manager setup removed - Unity handles memory automatically
         /// </summary>
-        public void SetMemoryManager(MemoryManager memoryManager)
+        public void SetMemoryManager(object memoryManager)
         {
-            if (memoryManager != null)
-            {
-                foreach (var prototype in abilityPrototypes)
-                {
-                    if (prototype != null)
-                    {
-                        memoryManager.TrackObject(prototype, "AbilityPrototypes");
-                    }
-                }
-                UnityEngine.Debug.Log("[AbilityPrototype] MemoryManager configured manually");
-            }
+            // Memory management removed - Unity handles this automatically
+            UnityEngine.Debug.Log("[AbilityPrototype] Memory management handled by Unity - no manual setup needed");
         }
 
         private void InitializeCache()

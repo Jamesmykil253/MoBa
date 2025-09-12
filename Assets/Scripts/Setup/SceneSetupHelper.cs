@@ -137,28 +137,11 @@ namespace MOBA.Setup
         [ContextMenu("Force Memory Cleanup")]
         public void ForceMemoryCleanup()
         {
-            var memoryManager = FindAnyObjectByType<MemoryManager>();
-            if (memoryManager != null)
-            {
-                // Use reflection to call ForceMemoryCleanup if it exists
-                var method = memoryManager.GetType().GetMethod("ForceMemoryCleanup");
-                if (method != null)
-                {
-                    method.Invoke(memoryManager, null);
-                    Debug.Log("[SceneSetupHelper] Forced memory cleanup via MemoryManager");
-                }
-                else
-                {
-                    Debug.LogWarning("[SceneSetupHelper] ForceMemoryCleanup method not found on MemoryManager");
-                }
-            }
-            else
-            {
-                // Manual cleanup
-                System.GC.Collect();
-                Resources.UnloadUnusedAssets();
-                Debug.Log("[SceneSetupHelper] Performed manual memory cleanup");
-            }
+            // REMOVED: MemoryManager was removed during cleanup
+            // Memory management is now handled by Unity's garbage collector
+            System.GC.Collect();
+            Resources.UnloadUnusedAssets();
+            Debug.Log("[SceneSetupHelper] Performed manual memory cleanup");
         }
     }
 }

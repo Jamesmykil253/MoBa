@@ -124,7 +124,7 @@ namespace MOBA
             foreach (var collider in potentialTargets)
             {
                 // Look for player controllers or other damageable objects
-                if (collider.GetComponent<PlayerController>() != null || 
+                if (collider.GetComponent<UnifiedPlayerController>() != null || 
                     collider.GetComponent<NetworkPlayerController>() != null)
                 {
                     float distance = Vector3.Distance(transform.position, collider.transform.position);
@@ -247,6 +247,10 @@ namespace MOBA
                 Die();
             }
         }
+
+        // IDamageable interface implementation
+        public float GetHealth() => currentHealth;
+        public bool IsDead() => isDead;
 
         private void CreateDamageEffect()
         {

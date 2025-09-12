@@ -30,7 +30,6 @@ namespace MOBA.Training
         // Components
         private NetworkManager networkManager;
         private NetworkSystemIntegration networkIntegration;
-        private TrainingGameManager trainingGameManager;
         
         // State
         private bool isTrainingActive = false;
@@ -287,23 +286,12 @@ namespace MOBA.Training
         {
             Debug.Log("[LocalTrainingLobby] Setting up training environment...");
             
-            // Create or find training game manager
-            trainingGameManager = FindFirstObjectByType<TrainingGameManager>();
-            if (trainingGameManager == null)
-            {
-                GameObject tgmObj = new GameObject("TrainingGameManager");
-                trainingGameManager = tgmObj.AddComponent<TrainingGameManager>();
-                
-                // Configure training manager
-                trainingGameManager.Initialize(trainingSpawnPoints, trainingPlayerPrefab);
-            }
-            
             yield return new WaitForSeconds(0.5f);
             
             // Spawn training player if enabled
             if (spawnPlayerImmediately && networkManager.IsHost)
             {
-                trainingGameManager.SpawnTrainingPlayer();
+                Debug.Log("[LocalTrainingLobby] Training player spawn disabled - system simplified");
             }
             
             Debug.Log("[LocalTrainingLobby] ✅ Training environment ready");

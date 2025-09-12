@@ -1,6 +1,7 @@
 using Unity.Netcode;
 using UnityEngine;
 using System.Collections.Generic;
+using System;
 
 namespace MOBA.Networking
 {
@@ -17,204 +18,172 @@ namespace MOBA.Networking
         [SerializeField] private float ultimateCooldown = 60f;
 
         [Header("Rate Limiting")]
-        [SerializeField] private int maxCastsPerSecond = 10;
+        [SerializeField] private int maxCastsPerWindow = 10;
         [SerializeField] private float rateLimitWindow = 1f;
 
         [Header("Anti-Cheat")]
-        [SerializeField] private float maxCastRange = 20f;
+        [SerializeField] private float maxDistanceFromPlayer = 50f;
         [SerializeField] private float minCastInterval = 0.1f;
         [SerializeField] private int maxConsecutiveCasts = 5;
 
-        // Network synchronized cooldowns
-        private NetworkVariable<float> networkGlobalCooldown = new NetworkVariable<float>(
-            0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-        private NetworkVariable<float> networkAbility1Cooldown = new NetworkVariable<float>(
-            0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-        private NetworkVariable<float> networkAbility2Cooldown = new NetworkVariable<float>(
-            0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-        private NetworkVariable<float> networkUltimateCooldown = new NetworkVariable<float>(
-            0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+        [Header("Lag Compensation")]
+        [SerializeField] private float maxRollbackTime = 0.5f;
+        [SerializeField] private bool enableLagCompensation = true;
 
-        // Rate limiting per client
+        [Header("Performance")]
+        [SerializeField] private int maxQueuedCasts = 5;
+        [SerializeField] private float processInterval = 0.05f;
+
+        // State tracking
         private Dictionary<ulong, ClientRateLimit> clientRateLimits = new Dictionary<ulong, ClientRateLimit>();
+        private Dictionary<AbilityType, float> lastCastTimes = new Dictionary<AbilityType, float>();
+        private Dictionary<AbilityType, float> cooldownEndTimes = new Dictionary<AbilityType, float>();
+        private Queue<PendingCast> pendingCasts = new Queue<PendingCast>();
+        
+        // Performance tracking
+        private float lastProcessTime;
+        private float frameStartTime;
 
-        // Ability data cache
-        private Dictionary<string, AbilityData> abilityCache = new Dictionary<string, AbilityData>();
+        // Events
+        public static event Action<ulong, AbilityType, Vector3> OnAbilityCast;
 
-        private void Awake()
+        #region Network Events
+        
+        /// <summary>
+        /// Client requests to cast an ability
+        /// </summary>
+        [Rpc(SendTo.Server)]
+        public void RequestAbilityCastRpc(AbilityType abilityType, Vector3 targetPosition, float clientTimestamp, RpcParams rpcParams = default)
         {
-            InitializeAbilityCache();
+            ulong clientId = rpcParams.Receive.SenderClientId;
+            
+            if (!ValidateAbilityCast(clientId, abilityType, targetPosition, clientTimestamp))
+                return;
+
+            var cast = new PendingCast
+            {
+                clientId = clientId,
+                abilityType = abilityType,
+                targetPosition = targetPosition,
+                timestamp = clientTimestamp,
+                serverReceiveTime = Time.time
+            };
+
+            if (pendingCasts.Count < maxQueuedCasts)
+            {
+                pendingCasts.Enqueue(cast);
+            }
+            else
+            {
+                Debug.LogWarning($"[NetworkAbilitySystem] Cast queue full for client {clientId}");
+            }
         }
 
-        private void InitializeAbilityCache()
+        /// <summary>
+        /// Server confirms ability cast to all clients
+        /// </summary>
+        [Rpc(SendTo.Everyone)]
+        public void ConfirmAbilityCastRpc(ulong casterId, AbilityType abilityType, Vector3 targetPosition, float serverTimestamp)
         {
-            abilityCache["PrimaryAttack"] = new AbilityData { name = "PrimaryAttack", damage = 50, range = 5f };
-            abilityCache["Ability1"] = new AbilityData { name = "Ability1", damage = 100, range = 8f };
-            abilityCache["Ability2"] = new AbilityData { name = "Ability2", damage = 150, range = 10f };
-            abilityCache["Ultimate"] = new AbilityData { name = "Ultimate", damage = 300, range = 15f };
+            OnAbilityCast?.Invoke(casterId, abilityType, targetPosition);
+        }
+
+        #endregion
+
+        #region Unity Events
+
+        public override void OnNetworkSpawn()
+        {
+            if (IsServer)
+            {
+                InitializeAbilitySystem();
+            }
         }
 
         private void Update()
         {
             if (IsServer)
             {
-                UpdateCooldowns();
+                ProcessPendingCasts();
+                CleanupOldRateLimitData();
+            }
+            
+            UpdatePerformanceTracking();
+        }
+
+        #endregion
+
+        #region Initialization
+
+        private void InitializeAbilitySystem()
+        {
+            foreach (AbilityType abilityType in System.Enum.GetValues(typeof(AbilityType)))
+            {
+                lastCastTimes[abilityType] = 0f;
+                cooldownEndTimes[abilityType] = 0f;
             }
         }
 
-        private void UpdateCooldowns()
+        #endregion
+
+        #region Validation
+
+        private bool ValidateAbilityCast(ulong clientId, AbilityType abilityType, Vector3 targetPosition, float clientTimestamp)
         {
-            // Update global cooldown
-            if (networkGlobalCooldown.Value > 0)
+            // Rate limiting
+            if (!IsWithinRateLimit(clientId))
             {
-                networkGlobalCooldown.Value = Mathf.Max(0, networkGlobalCooldown.Value - Time.deltaTime);
-            }
-
-            // Update ability cooldowns
-            if (networkAbility1Cooldown.Value > 0)
-            {
-                networkAbility1Cooldown.Value = Mathf.Max(0, networkAbility1Cooldown.Value - Time.deltaTime);
-            }
-
-            if (networkAbility2Cooldown.Value > 0)
-            {
-                networkAbility2Cooldown.Value = Mathf.Max(0, networkAbility2Cooldown.Value - Time.deltaTime);
-            }
-
-            if (networkUltimateCooldown.Value > 0)
-            {
-                networkUltimateCooldown.Value = Mathf.Max(0, networkUltimateCooldown.Value - Time.deltaTime);
-            }
-        }
-
-        /// <summary>
-        /// Casts an ability with server validation
-        /// </summary>
-        public void CastAbility(AbilityType abilityType, Vector3 targetPosition, ulong clientId)
-        {
-            if (!IsServer) return;
-
-            if (ValidateAbilityCast(clientId, abilityType, targetPosition))
-            {
-                ExecuteAbility(abilityType, targetPosition);
-                UpdateCooldowns(abilityType);
-
-                // Notify clients
-                AbilityCastClientRpc(abilityType, targetPosition);
-            }
-        }
-
-        [ServerRpc(RequireOwnership = false)]
-        public void CastAbilityServerRpc(AbilityType abilityType, Vector3 targetPosition, ServerRpcParams rpcParams = default)
-        {
-            ulong clientId = rpcParams.Receive.SenderClientId;
-            CastAbility(abilityType, targetPosition, clientId);
-        }
-
-        [ClientRpc]
-        private void AbilityCastClientRpc(AbilityType abilityType, Vector3 targetPosition)
-        {
-            if (!IsServer)
-            {
-                // Client visual feedback
-                SpawnAbilityEffect(abilityType, targetPosition);
-            }
-        }
-
-        private bool ValidateAbilityCast(ulong clientId, AbilityType abilityType, Vector3 targetPosition)
-        {
-            // Check rate limiting with enhanced tracking
-            if (!CheckClientRateLimit(clientId))
-            {
-                UnityEngine.Debug.LogWarning($"[NetworkAbilitySystem] Rate limit exceeded for client {clientId}");
+                Debug.LogWarning($"[NetworkAbilitySystem] Rate limit exceeded for client {clientId}");
                 return false;
             }
 
-            // Check minimum cast interval (anti-spam)
-            if (!CheckMinimumCastInterval(clientId))
+            // Cooldown check
+            if (cooldownEndTimes.ContainsKey(abilityType) && Time.time < cooldownEndTimes[abilityType])
             {
-                UnityEngine.Debug.LogWarning($"[NetworkAbilitySystem] Minimum cast interval violated for client {clientId}");
+                Debug.LogWarning($"[NetworkAbilitySystem] Ability {abilityType} still on cooldown");
                 return false;
             }
 
-            // Check cooldowns
-            if (networkGlobalCooldown.Value > 0)
+            // Distance validation (basic anti-cheat)
+            var playerObj = GetPlayerObject(clientId);
+            if (playerObj != null)
             {
-                UnityEngine.Debug.LogWarning($"[NetworkAbilitySystem] Global cooldown active for client {clientId}");
-                return false;
-            }
-
-            switch (abilityType)
-            {
-                case AbilityType.Ability1:
-                    if (networkAbility1Cooldown.Value > 0) return false;
-                    break;
-                case AbilityType.Ability2:
-                    if (networkAbility2Cooldown.Value > 0) return false;
-                    break;
-                case AbilityType.Ultimate:
-                    if (networkUltimateCooldown.Value > 0) return false;
-                    break;
-            }
-
-            // Validate target position with lag compensation
-            if (!IsValidTargetPosition(clientId, targetPosition, abilityType))
-            {
-                UnityEngine.Debug.LogWarning($"[NetworkAbilitySystem] Invalid target position for client {clientId}: {targetPosition}");
-                return false;
-            }
-
-            return true;
-        }
-
-        private bool CheckMinimumCastInterval(ulong clientId)
-        {
-            if (!clientRateLimits.ContainsKey(clientId))
-            {
-                clientRateLimits[clientId] = new ClientRateLimit();
-                return true;
-            }
-
-            ClientRateLimit rateLimit = clientRateLimits[clientId];
-            float timeSinceLastCast = Time.time - rateLimit.lastCastTime;
-
-            if (timeSinceLastCast < minCastInterval)
-            {
-                rateLimit.rapidCastCount++;
-                if (rateLimit.rapidCastCount > maxConsecutiveCasts)
+                float distance = Vector3.Distance(playerObj.transform.position, targetPosition);
+                if (distance > maxDistanceFromPlayer)
                 {
-                    // Potential cheating detected
-                    UnityEngine.Debug.LogError($"[NetworkAbilitySystem] Rapid casting detected for client {clientId}");
+                    Debug.LogWarning($"[NetworkAbilitySystem] Anti-cheat: Target too far from player: {distance} > {maxDistanceFromPlayer}");
                     return false;
                 }
             }
-            else
+
+            // Anti-spam protection
+            if (!ValidateSpamProtection(clientId))
             {
-                rateLimit.rapidCastCount = 0;
+                return false;
             }
 
-            rateLimit.lastCastTime = Time.time;
             return true;
         }
 
-        private bool CheckClientRateLimit(ulong clientId)
+        private bool IsWithinRateLimit(ulong clientId)
         {
             if (!clientRateLimits.ContainsKey(clientId))
             {
                 clientRateLimits[clientId] = new ClientRateLimit();
             }
 
-            ClientRateLimit rateLimit = clientRateLimits[clientId];
+            var rateLimit = clientRateLimits[clientId];
             float currentTime = Time.time;
 
             // Reset window if needed
-            if (currentTime - rateLimit.windowStart > rateLimitWindow)
+            if (currentTime - rateLimit.windowStart >= rateLimitWindow)
             {
                 rateLimit.windowStart = currentTime;
                 rateLimit.castCount = 0;
             }
 
-            if (rateLimit.castCount >= maxCastsPerSecond)
+            // Check if within limit
+            if (rateLimit.castCount >= maxCastsPerWindow)
             {
                 return false;
             }
@@ -223,203 +192,191 @@ namespace MOBA.Networking
             return true;
         }
 
-        private bool IsValidTargetPosition(ulong clientId, Vector3 position, AbilityType abilityType)
+        private bool ValidateSpamProtection(ulong clientId)
         {
-            // Get ability range
-            float range = GetAbilityRange(abilityType);
+            if (!clientRateLimits.ContainsKey(clientId))
+                return true;
 
-            // Check if target is within map bounds
-            if (position.magnitude > 100f) return false;
+            var rateLimit = clientRateLimits[clientId];
+            float currentTime = Time.time;
 
-            // Check if target is within global max cast range
-            if (maxCastRange > 0 && position.magnitude > maxCastRange) return false;
+            // Check for rapid consecutive casts
+            if (currentTime - rateLimit.lastCastTime < minCastInterval)
+            {
+                rateLimit.rapidCastCount++;
+                if (rateLimit.rapidCastCount > maxConsecutiveCasts)
+                {
+                    Debug.LogWarning($"[NetworkAbilitySystem] Spam protection triggered for client {clientId}");
+                    return false;
+                }
+            }
+            else
+            {
+                rateLimit.rapidCastCount = 0;
+            }
 
-            // Get caster position with lag compensation
-            Vector3 casterPosition = GetCasterPositionWithLagCompensation(clientId);
-
-            // Check if target is within ability range from caster
-            if (Vector3.Distance(casterPosition, position) > range) return false;
-
-            // Additional validation: check line of sight, etc.
-            // For now, basic range check
+            rateLimit.lastCastTime = currentTime;
             return true;
         }
 
-        private Vector3 GetCasterPositionWithLagCompensation(ulong clientId)
+        #endregion
+
+        #region Cast Processing
+
+        private void ProcessPendingCasts()
         {
-            // Find the player controller for lag compensation
-            var playerController = FindPlayerController(clientId);
-            if (playerController != null)
+            if (Time.time - lastProcessTime < processInterval)
+                return;
+
+            int processed = 0;
+            int maxProcessPerFrame = 3; // Limit processing to maintain performance
+
+            while (pendingCasts.Count > 0 && processed < maxProcessPerFrame)
             {
-                // Use lag compensation to get historical position
-                float lagCompensationTime = EstimateClientLatency(clientId);
-                var (position, _) = playerController.GetPositionAtTime(Time.time - lagCompensationTime);
-                return position;
+                var cast = pendingCasts.Dequeue();
+                ProcessAbilityCast(cast);
+                processed++;
             }
 
-            return transform.position; // Fallback
+            lastProcessTime = Time.time;
         }
 
-        private NetworkPlayerController FindPlayerController(ulong clientId)
+        private void ProcessAbilityCast(PendingCast cast)
         {
-            // Find all player controllers and match by owner
-            var players = FindObjectsByType<NetworkPlayerController>(FindObjectsSortMode.None);
-            foreach (var player in players)
+            // Apply lag compensation if enabled
+            Vector3 compensatedPosition = cast.targetPosition;
+            if (enableLagCompensation)
             {
-                if (player.OwnerClientId == clientId)
-                {
-                    return player;
-                }
+                float lag = cast.serverReceiveTime - cast.timestamp;
+                compensatedPosition = ApplyLagCompensation(cast.targetPosition, lag);
             }
-            return null;
+
+            // Execute the ability
+            ExecuteAbility(cast.abilityType, compensatedPosition);
+
+            // Update cooldowns
+            lastCastTimes[cast.abilityType] = Time.time;
+            float cooldown = GetAbilityCooldown(cast.abilityType);
+            cooldownEndTimes[cast.abilityType] = Time.time + cooldown;
+
+            // Confirm to all clients
+            ConfirmAbilityCastRpc(cast.clientId, cast.abilityType, compensatedPosition, Time.time);
         }
 
-        private float EstimateClientLatency(ulong clientId)
+        private Vector3 ApplyLagCompensation(Vector3 targetPosition, float lag)
         {
-            // Simple latency estimation - in production, use actual ping measurements
-            return 0.1f; // 100ms default
-        }
-
-        private float GetAbilityRange(AbilityType abilityType)
-        {
-            switch (abilityType)
-            {
-                case AbilityType.PrimaryAttack: return 5f;
-                case AbilityType.Ability1: return 8f;
-                case AbilityType.Ability2: return 10f;
-                case AbilityType.Ultimate: return 15f;
-                default: return 5f;
-            }
-        }
-
-        private void UpdateCooldowns(AbilityType abilityType)
-        {
-            networkGlobalCooldown.Value = globalCooldown;
-
-            switch (abilityType)
-            {
-                case AbilityType.Ability1:
-                    networkAbility1Cooldown.Value = ability1Cooldown;
-                    break;
-                case AbilityType.Ability2:
-                    networkAbility2Cooldown.Value = ability2Cooldown;
-                    break;
-                case AbilityType.Ultimate:
-                    networkUltimateCooldown.Value = ultimateCooldown;
-                    break;
-            }
+            // Simple lag compensation - clamp to prevent abuse
+            lag = Mathf.Clamp(lag, 0f, maxRollbackTime);
+            
+            // For basic implementation, just return the original position
+            // In a full implementation, this would rollback world state
+            return targetPosition;
         }
 
         private void ExecuteAbility(AbilityType abilityType, Vector3 targetPosition)
         {
-            // Server executes ability logic
-            string abilityName = abilityType.ToString();
-
-            if (abilityCache.ContainsKey(abilityName))
-            {
-                AbilityData ability = abilityCache[abilityName];
-
-                // Spawn projectile or apply effect
-                SpawnProjectile(ability, targetPosition);
-            }
+            AbilityData ability = GetAbilityData(abilityType);
+            
+            // Apply instant effects
+            ApplyInstantAbilityEffect(ability, targetPosition);
+            
+            Debug.Log($"[NetworkAbilitySystem] Executed {abilityType} at {targetPosition}");
         }
 
-        private void SpawnProjectile(AbilityData ability, Vector3 targetPosition)
+        private void ApplyInstantAbilityEffect(AbilityData ability, Vector3 targetPosition)
         {
-            // Use object pool for projectiles
-            var pool = FindFirstObjectByType<ProjectilePool>();
-            if (pool != null)
+            // Basic area damage implementation
+            Collider[] hits = Physics.OverlapSphere(targetPosition, ability.range);
+            
+            foreach (var hit in hits)
             {
-                Vector2 direction = (targetPosition - transform.position).normalized;
-                string flyweightName = GetFlyweightNameForAbility(ability.name);
-
-                if (pool.GetAvailableFlyweightNames().Contains(flyweightName))
+                if (hit.TryGetComponent<IDamageable>(out var damageable))
                 {
-                    pool.SpawnProjectileWithFlyweight(transform.position, direction, flyweightName);
-                }
-                else
-                {
-                    pool.SpawnProjectile(transform.position, direction, 10f, ability.damage, 3f);
+                    damageable.TakeDamage(ability.damage);
                 }
             }
         }
 
-        private void SpawnAbilityEffect(AbilityType abilityType, Vector3 targetPosition)
+        #endregion
+
+        #region Ability Data
+
+        private float GetAbilityCooldown(AbilityType abilityType)
         {
-            // Client-side visual effects
-            string abilityName = abilityType.ToString();
-
-            // Create temporary effect
-            GameObject effect = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            effect.transform.position = targetPosition;
-            effect.transform.localScale = Vector3.one * 0.5f;
-
-            var renderer = effect.GetComponent<Renderer>();
-            renderer.material.color = GetAbilityColor(abilityType);
-
-            Object.Destroy(effect, 0.5f);
+            return abilityType switch
+            {
+                AbilityType.PrimaryAttack => globalCooldown,
+                AbilityType.Ability1 => ability1Cooldown,
+                AbilityType.Ability2 => ability2Cooldown,
+                AbilityType.Ultimate => ultimateCooldown,
+                _ => globalCooldown
+            };
         }
 
-        private Color GetAbilityColor(AbilityType abilityType)
+        private AbilityData GetAbilityData(AbilityType abilityType)
         {
-            switch (abilityType)
+            return abilityType switch
             {
-                case AbilityType.PrimaryAttack: return Color.white;
-                case AbilityType.Ability1: return Color.blue;
-                case AbilityType.Ability2: return Color.red;
-                case AbilityType.Ultimate: return Color.yellow;
-                default: return Color.white;
+                AbilityType.PrimaryAttack => new AbilityData { name = "Primary Attack", damage = 25f, range = 5f, speed = 10f, lifetime = 2f },
+                AbilityType.Ability1 => new AbilityData { name = "Fireball", damage = 50f, range = 8f, speed = 15f, lifetime = 3f },
+                AbilityType.Ability2 => new AbilityData { name = "Lightning", damage = 75f, range = 12f, speed = 20f, lifetime = 1f },
+                AbilityType.Ultimate => new AbilityData { name = "Meteor", damage = 150f, range = 15f, speed = 5f, lifetime = 5f },
+                _ => new AbilityData { name = "Unknown", damage = 0f, range = 0f, speed = 0f, lifetime = 0f }
+            };
+        }
+
+        #endregion
+
+        #region Utility
+
+        private NetworkObject GetPlayerObject(ulong clientId)
+        {
+            if (NetworkManager.Singleton.ConnectedClients.TryGetValue(clientId, out var client))
+            {
+                return client.PlayerObject;
+            }
+            return null;
+        }
+
+        private void CleanupOldRateLimitData()
+        {
+            float currentTime = Time.time;
+            var toRemove = new List<ulong>();
+            
+            foreach (var kvp in clientRateLimits)
+            {
+                if (currentTime - kvp.Value.windowStart > rateLimitWindow * 2)
+                {
+                    toRemove.Add(kvp.Key);
+                }
+            }
+            
+            foreach (ulong clientId in toRemove)
+            {
+                clientRateLimits.Remove(clientId);
             }
         }
 
-        private string GetFlyweightNameForAbility(string abilityName)
+        private void UpdatePerformanceTracking()
         {
-            switch (abilityName.ToLower())
+            if (Time.frameCount % 60 == 0) // Update every 60 frames
             {
-                case "primaryattack":
-                    return "BasicProjectile";
-                case "ability1":
-                    return "FastProjectile";
-                case "ability2":
-                    return "HeavyProjectile";
-                case "ultimate":
-                    return "HomingProjectile";
-                default:
-                    return "BasicProjectile";
+                frameStartTime = Time.time;
             }
         }
 
-        // Public API for cooldown checking
-        public bool CanCastAbility(AbilityType abilityType)
-        {
-            if (networkGlobalCooldown.Value > 0) return false;
+        #endregion
 
-            switch (abilityType)
-            {
-                case AbilityType.Ability1:
-                    return networkAbility1Cooldown.Value <= 0;
-                case AbilityType.Ability2:
-                    return networkAbility2Cooldown.Value <= 0;
-                case AbilityType.Ultimate:
-                    return networkUltimateCooldown.Value <= 0;
-                default:
-                    return true;
-            }
-        }
+        #region Data Structures
 
-        public float GetRemainingCooldown(AbilityType abilityType)
+        [System.Serializable]
+        private struct PendingCast
         {
-            switch (abilityType)
-            {
-                case AbilityType.Ability1:
-                    return networkAbility1Cooldown.Value;
-                case AbilityType.Ability2:
-                    return networkAbility2Cooldown.Value;
-                case AbilityType.Ultimate:
-                    return networkUltimateCooldown.Value;
-                default:
-                    return 0f;
-            }
+            public ulong clientId;
+            public AbilityType abilityType;
+            public Vector3 targetPosition;
+            public float timestamp;
+            public float serverReceiveTime;
         }
 
         private class ClientRateLimit
@@ -429,6 +386,8 @@ namespace MOBA.Networking
             public float lastCastTime;
             public int rapidCastCount;
         }
+
+        #endregion
     }
 
     public enum AbilityType
@@ -447,5 +406,10 @@ namespace MOBA.Networking
         public float range;
         public float speed;
         public float lifetime;
+    }
+
+    public interface IDamageable
+    {
+        void TakeDamage(float damage);
     }
 }

@@ -28,7 +28,10 @@ namespace MOBA
         public float CurrentHealth => currentHealth;
         public float MaxHealth => maxHealth;
         public float HealthPercentage => maxHealth > 0 ? currentHealth / maxHealth : 0f;
-        public bool IsDead => currentHealth <= 0f;
+
+        // IDamageable interface implementation
+        public float GetHealth() => currentHealth;
+        public bool IsDead() => currentHealth <= 0f;
 
         private void Awake()
         {
@@ -48,7 +51,7 @@ namespace MOBA
 
         public void TakeDamage(float damage)
         {
-            if (IsDead) return;
+            if (IsDead()) return;
 
             currentHealth = Mathf.Max(0f, currentHealth - damage);
             
@@ -64,7 +67,7 @@ namespace MOBA
             OnHealthChanged?.Invoke(currentHealth, maxHealth);
 
             // Check for death
-            if (IsDead)
+            if (IsDead())
             {
                 HandleDeath();
             }
@@ -72,7 +75,7 @@ namespace MOBA
 
         public void Heal(float amount)
         {
-            if (IsDead) return;
+            if (IsDead()) return;
 
             currentHealth = Mathf.Min(maxHealth, currentHealth + amount);
             

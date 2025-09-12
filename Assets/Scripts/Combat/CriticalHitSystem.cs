@@ -69,20 +69,7 @@ namespace MOBA
             return result;
         }
 
-        /// <summary>
-        /// Calculates critical hit for projectile-based attacks
-        /// </summary>
-        public static CriticalHitResult CalculateProjectileCriticalHit(
-            ProjectileFlyweight projectileData,
-            CharacterStats attacker,
-            CharacterStats defender)
-        {
-            float baseCritChance = projectileData.critChance;
-            float critChanceBonus = attacker.CritChanceBonus - defender.CritResistance;
-            float critMultiplier = projectileData.critMultiplier + attacker.CritDamageBonus;
-
-            return CalculateCriticalHit(baseCritChance, critChanceBonus, critMultiplier);
-        }
+        // NOTE: CalculateProjectileCriticalHit method removed - projectile system disabled
     }
 
     /// <summary>

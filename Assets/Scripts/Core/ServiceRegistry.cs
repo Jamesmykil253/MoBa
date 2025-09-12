@@ -9,12 +9,8 @@ namespace MOBA
     public class ServiceRegistry : MonoBehaviour
     {
         [Header("Core Services")]
-        [SerializeField] private CommandManager commandManager;
         [SerializeField] private AbilitySystem abilitySystem;
-        // [SerializeField] private ProjectilePool projectilePool; // DISABLED: Projectile system removed
-        [SerializeField] private FlyweightFactory flyweightFactory;
-        [SerializeField] private MemoryManager memoryManager;
-        [SerializeField] private PerformanceProfiler performanceProfiler;
+        // REMOVED: All tool systems deleted during cleanup
 
         [Header("Network Services")]
         [SerializeField] private Networking.NetworkGameManager networkGameManager;
@@ -38,12 +34,8 @@ namespace MOBA
             }
 
             // Register manually assigned services
-            RegisterService(commandManager);
             RegisterService(abilitySystem);
-            // RegisterService(projectilePool); // DISABLED: Projectile system removed
-            RegisterService(flyweightFactory);
-            RegisterService(memoryManager);
-            RegisterService(performanceProfiler);
+            // REMOVED: Tool system registrations deleted
             RegisterService(networkGameManager);
             RegisterService(networkIntegration);
 
@@ -74,13 +66,6 @@ namespace MOBA
 
         private void AutoDiscoverServices()
         {
-            // Auto-discover CommandManager
-            if (commandManager == null)
-            {
-                commandManager = FindAnyObjectByType<CommandManager>();
-                RegisterService(commandManager);
-            }
-
             // Auto-discover AbilitySystem
             if (abilitySystem == null)
             {
@@ -88,34 +73,7 @@ namespace MOBA
                 RegisterService(abilitySystem);
             }
 
-            // DISABLED: ProjectilePool auto-discovery commented out - projectile system removed
-            // Auto-discover ProjectilePool
-            // if (projectilePool == null)
-            // {
-            //     projectilePool = FindAnyObjectByType<ProjectilePool>();
-            //     RegisterService(projectilePool);
-            // }
-
-            // Auto-discover FlyweightFactory
-            if (flyweightFactory == null)
-            {
-                flyweightFactory = FindAnyObjectByType<FlyweightFactory>();
-                RegisterService(flyweightFactory);
-            }
-
-            // Auto-discover MemoryManager
-            if (memoryManager == null)
-            {
-                memoryManager = FindAnyObjectByType<MemoryManager>();
-                RegisterService(memoryManager);
-            }
-
-            // Auto-discover PerformanceProfiler
-            if (performanceProfiler == null)
-            {
-                performanceProfiler = FindAnyObjectByType<PerformanceProfiler>();
-                RegisterService(performanceProfiler);
-            }
+            // REMOVED: Tool system auto-discovery deleted
 
             // Auto-discover NetworkGameManager
             if (networkGameManager == null)
@@ -170,9 +128,7 @@ namespace MOBA
         {
             bool allValid = true;
 
-            allValid &= ValidateService<CommandManager>("CommandManager");
             allValid &= ValidateService<AbilitySystem>("AbilitySystem");
-            // allValid &= ValidateService<ProjectilePool>("ProjectilePool"); // DISABLED: Projectile system removed
 
             return allValid;
         }

@@ -381,9 +381,8 @@ namespace MOBA
         /// </summary>
         private void ExecuteAbilityThroughSystem(AbilityData ability, Vector3 targetPosition, bool isManualAim)
         {
-            // Find the AbilitySystem and CommandManager in the scene
+            // Find the AbilitySystem in the scene (CommandManager was removed)
             var abilitySystem = FindAnyObjectByType<AbilitySystem>();
-            var commandManager = FindAnyObjectByType<CommandManager>();
 
             if (abilitySystem == null)
             {
@@ -400,17 +399,8 @@ namespace MOBA
                 Debug.Log($"[HoldToAimSystem] Applied {manualAimDamageBonus * 100}% manual aim bonus to {ability.name}");
             }
 
-            // Execute through existing command system if available
-            if (commandManager != null)
-            {
-                var command = new AbilityCommand(abilitySystem, ability, targetPosition);
-                commandManager.ExecuteCommand(command);
-            }
-            else
-            {
-                // Fallback: execute directly through ability system
-                abilitySystem.CastAbility(ability, targetPosition);
-            }
+            // Execute directly through ability system (command pattern was removed)
+            abilitySystem.CastAbility(ability, targetPosition);
         }
 
         private void OnDestroy()

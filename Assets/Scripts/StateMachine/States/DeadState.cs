@@ -14,7 +14,7 @@ namespace MOBA
         private bool hasPlayedDeathEffect;
         private bool respawnTriggered;
 
-        public DeadState(MOBACharacterController controller)
+        public DeadState(UnifiedPlayerController controller)
         {
             this.controller = controller;
         }
@@ -28,7 +28,11 @@ namespace MOBA
             // Disable physics and movement
             if (controller.TryGetComponent(out Rigidbody rb))
             {
-                rb.linearVelocity = Vector3.zero;
+                // Only set velocity to zero if the rigidbody is not kinematic
+                if (!rb.isKinematic)
+                {
+                    rb.linearVelocity = Vector3.zero;
+                }
                 rb.isKinematic = true; // Disable physics during death
             }
 
@@ -192,33 +196,21 @@ namespace MOBA
                 spriteRenderer.color = color;
             }
 
-            // FIXED: Actually reset health to max when respawning
-            var playerController = controller.GetComponent<PlayerController>();
-            if (playerController != null)
+            // Reset health to max using reflection to access private fields since Health is read-only
+            var currentHealthField = typeof(UnifiedPlayerController).GetField("currentHealth", 
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var maxHealthField = typeof(UnifiedPlayerController).GetField("maxHealth", 
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                
+            if (currentHealthField != null && maxHealthField != null)
             {
-                // Reset health to max using reflection to access private fields
-                var currentHealthField = typeof(PlayerController).GetField("currentHealth", 
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                var maxHealthField = typeof(PlayerController).GetField("maxHealth", 
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    
-                if (currentHealthField != null && maxHealthField != null)
-                {
-                    float maxHealth = (float)maxHealthField.GetValue(playerController);
-                    currentHealthField.SetValue(playerController, maxHealth);
-                    Debug.Log($"[DeadState] Health reset to {maxHealth}");
-                }
-                else
-                {
-                    // Fallback: call respawn method if available
-                    var respawnMethod = typeof(PlayerController).GetMethod("Respawn", 
-                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    if (respawnMethod != null)
-                    {
-                        respawnMethod.Invoke(playerController, null);
-                        Debug.Log("[DeadState] Called Respawn method");
-                    }
-                }
+                float maxHealth = (float)maxHealthField.GetValue(controller);
+                currentHealthField.SetValue(controller, maxHealth);
+                Debug.Log($"[DeadState] Health reset to {maxHealth} on respawn");
+            }
+            else
+            {
+                Debug.LogWarning("[DeadState] Could not reset health - fields not found via reflection");
             }
         }
 

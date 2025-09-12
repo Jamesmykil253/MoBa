@@ -12,7 +12,7 @@ namespace MOBA
         private float idleTime;
         private const float IDLE_ANIMATION_THRESHOLD = 3f;
 
-        public IdleState(MOBACharacterController controller)
+        public IdleState(UnifiedPlayerController controller)
         {
             this.controller = controller;
         }
@@ -72,8 +72,8 @@ namespace MOBA
             }
 
             // Check for damage
-            var playerController = controller.GetComponent<PlayerController>();
-            if (playerController != null && playerController.Health <= 0)
+            // Health is now directly on the UnifiedPlayerController
+            if (controller.Health <= 0)
             {
                 // Transition to dead state will be handled by damage system
                 return;

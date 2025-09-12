@@ -15,7 +15,7 @@ namespace MOBA
         private int comboCount;
         private const int MAX_COMBO = 3;
 
-        public AttackingState(MOBACharacterController controller)
+        public AttackingState(UnifiedPlayerController controller)
         {
             this.controller = controller;
         }

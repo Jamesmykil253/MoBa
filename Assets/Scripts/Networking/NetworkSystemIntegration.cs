@@ -17,7 +17,6 @@ namespace MOBA.Networking
         [SerializeField] private NetworkEventBus eventBus;
         [SerializeField] private NetworkObjectPoolManager poolManager;
         [SerializeField] private NetworkPoolObjectManager componentPoolManager;
-        [SerializeField] private LagCompensationManager lagManager;
         [SerializeField] private AntiCheatSystem antiCheat;
         [SerializeField] private NetworkProfiler profiler;
 
@@ -27,7 +26,6 @@ namespace MOBA.Networking
 
         [Header("Configuration")]
         [SerializeField] private bool enableAntiCheat = true;
-        [SerializeField] private bool enableLagCompensation = true;
         [SerializeField] private bool enableProfiling = true;
         [SerializeField] private int maxPlayers = 64;
 
@@ -71,11 +69,8 @@ namespace MOBA.Networking
                 }
             }
 
-            // 4. Initialize Lag Compensation Manager
-            if (lagManager == null && enableLagCompensation)
-            {
-                lagManager = LagCompensationManager.Instance;
-            }
+            // 4. Lag Compensation System was removed during cleanup
+            // Network timing is now handled by Unity Netcode directly
 
             // 5. Initialize Anti-Cheat System
             if (antiCheat == null && enableAntiCheat)
@@ -255,11 +250,8 @@ namespace MOBA.Networking
             // Publish connection event
             eventBus?.PublishClientConnected(clientId);
 
-            // Update lag compensation with client latency
-            if (lagManager != null)
-            {
-                lagManager.UpdateClientLatency(clientId, 0.1f); // Default latency
-            }
+            // REMOVED: Lag compensation system was removed during cleanup
+            // Network latency is now handled by Unity Netcode directly
         }
 
         private void OnClientDisconnected(ulong clientId)
@@ -300,7 +292,7 @@ namespace MOBA.Networking
                 connectedPlayers = gameManager?.ConnectedPlayers ?? 0,
                 maxPlayers = maxPlayers,
                 antiCheatEnabled = enableAntiCheat && antiCheat != null,
-                lagCompensationEnabled = enableLagCompensation && lagManager != null,
+                lagCompensationEnabled = false, // Lag compensation system was removed
                 profilingEnabled = enableProfiling && profiler != null,
                 poolStats = poolStats,
                 eventBusActive = eventBus != null

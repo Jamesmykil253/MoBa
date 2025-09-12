@@ -57,8 +57,8 @@ namespace MOBA
         private List<GameObject> createdObjects = new List<GameObject>();
 
         // Components cache
-        private PlayerController playerController;
-        private MOBACharacterController characterController;
+        private UnifiedPlayerController playerController;
+        private UnifiedPlayerController characterController;
         private MOBACameraController cameraController;
         private NetworkManager networkManager;
 
@@ -223,14 +223,8 @@ namespace MOBA
             if (enableDebugLogging)
                 Debug.Log("[MOBASceneInstantiator] Creating core gameplay systems...");
 
-            // Command Manager
-            var cmdManagerObj = new GameObject("CommandManager");
-            if (cmdManagerObj.AddComponent<CommandManager>() == null)
-            {
-                Debug.LogError("[MOBASceneInstantiator] Failed to add CommandManager component");
-                yield break;
-            }
-            createdObjects.Add(cmdManagerObj);
+            // REMOVED: CommandManager was removed during cleanup
+            // Command pattern was simplified to direct ability casting
 
             // Ability System
             var abilitySystemObj = new GameObject("AbilitySystem");
@@ -241,81 +235,72 @@ namespace MOBA
             }
             createdObjects.Add(abilitySystemObj);
 
+            // DISABLED: FlyweightFactory creation removed - projectile system disabled
             // Flyweight Factory
-            var flyweightFactoryObj = new GameObject("FlyweightFactory");
-            var flyweightFactory = flyweightFactoryObj.AddComponent<FlyweightFactory>();
-            if (flyweightFactory == null)
-            {
-                Debug.LogError("[MOBASceneInstantiator] Failed to add FlyweightFactory component");
-                yield break;
-            }
-            createdObjects.Add(flyweightFactoryObj);
+            // var flyweightFactoryObj = new GameObject("FlyweightFactory");
+            // var flyweightFactory = flyweightFactoryObj.AddComponent<FlyweightFactory>();
+            // if (flyweightFactory == null)
+            // {
+            //     Debug.LogError("[MOBASceneInstantiator] Failed to add FlyweightFactory component");
+            //     yield break;
+            // }
+            // createdObjects.Add(flyweightFactoryObj);
 
+            // DISABLED: ProjectilePool creation removed - projectile system disabled
             // Projectile Pool with prefab
-            var projectilePoolObj = new GameObject("ProjectilePool");
-            var projectilePool = projectilePoolObj.AddComponent<ProjectilePool>();
-            if (projectilePool == null)
-            {
-                Debug.LogError("[MOBASceneInstantiator] Failed to add ProjectilePool component");
-                yield break;
-            }
+            // var projectilePoolObj = new GameObject("ProjectilePool");
+            // var projectilePool = projectilePoolObj.AddComponent<ProjectilePool>();
+            // if (projectilePool == null)
+            // {
+            //     Debug.LogError("[MOBASceneInstantiator] Failed to add ProjectilePool component");
+            //     yield break;
+            // }
             
+            // DISABLED: Projectile prefab creation removed - projectile system disabled
             // Create projectile prefab
-            var projectilePrefab = CreateProjectilePrefab();
-            if (projectilePrefab == null)
-            {
-                Debug.LogError("[MOBASceneInstantiator] Failed to create projectile prefab");
-                yield break;
-            }
-            projectilePool.projectilePrefab = projectilePrefab;
-            projectilePool.flyweightFactory = flyweightFactory;
-            createdObjects.Add(projectilePoolObj);
+            // var projectilePrefab = CreateProjectilePrefab();
+            // if (projectilePrefab == null)
+            // {
+            //     Debug.LogError("[MOBASceneInstantiator] Failed to create projectile prefab");
+            //     yield break;
+            // }
+            // projectilePool.projectilePrefab = projectilePrefab;
+            // projectilePool.flyweightFactory = flyweightFactory;
+            // createdObjects.Add(projectilePoolObj);
 
-            // Memory Manager
-            var memoryManagerObj = new GameObject("MemoryManager");
-            if (memoryManagerObj.AddComponent<MemoryManager>() == null)
-            {
-                Debug.LogError("[MOBASceneInstantiator] Failed to add MemoryManager component");
-                yield break;
-            }
-            createdObjects.Add(memoryManagerObj);
+            // REMOVED: MemoryManager was removed during cleanup
+            // Memory management is now handled by Unity's garbage collector
 
-            // Performance Profiler
-            var profilerObj = new GameObject("PerformanceProfiler");
-            if (profilerObj.AddComponent<PerformanceProfiler>() == null)
-            {
-                Debug.LogError("[MOBASceneInstantiator] Failed to add PerformanceProfiler component");
-                yield break;
-            }
-            createdObjects.Add(profilerObj);
+            // REMOVED: All tool systems deleted during cleanup
 
             yield return null;
         }
 
-        private GameObject CreateProjectilePrefab()
-        {
-            var projectilePrefab = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            projectilePrefab.name = "ProjectilePrefab";
-            projectilePrefab.transform.localScale = new Vector3(0.5f, 0.5f, 0.5f);
+        // DISABLED: CreateProjectilePrefab method removed - projectile system disabled
+        // private GameObject CreateProjectilePrefab()
+        // {
+        //     var projectilePrefab = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        //     projectilePrefab.name = "ProjectilePrefab";
+        //     projectilePrefab.transform.localScale = new Vector3(0.5f, 0.5f, 0.5f);
 
-            // Configure visual
-            var renderer = projectilePrefab.GetComponent<Renderer>();
-            renderer.material = new Material(Shader.Find("Standard"));
-            renderer.material.color = Color.yellow;
+        //     // Configure visual
+        //     var renderer = projectilePrefab.GetComponent<Renderer>();
+        //     renderer.material = new Material(Shader.Find("Standard"));
+        //     renderer.material.color = Color.yellow;
 
-            // Add projectile component
-            projectilePrefab.AddComponent<Projectile>();
+        //     // Add projectile component
+        //     projectilePrefab.AddComponent<Projectile>();
 
-            // Add rigidbody for physics
-            var rb = projectilePrefab.AddComponent<Rigidbody>();
-            rb.useGravity = false;
-            rb.mass = 0.1f;
+        //     // Add rigidbody for physics
+        //     var rb = projectilePrefab.AddComponent<Rigidbody>();
+        //     rb.useGravity = false;
+        //     rb.mass = 0.1f;
 
-            // Make it inactive initially (for pooling)
-            projectilePrefab.SetActive(false);
+        //     // Make it inactive initially (for pooling)
+        //     projectilePrefab.SetActive(false);
 
-            return projectilePrefab;
-        }
+        //     return projectilePrefab;
+        // }
 
         private IEnumerator CreateEnvironment()
         {
@@ -416,8 +401,8 @@ namespace MOBA
             rigidbody.collisionDetectionMode = CollisionDetectionMode.Continuous;
 
             // Add core controller components
-            playerController = playerObject.AddComponent<PlayerController>();
-            characterController = playerObject.AddComponent<MOBACharacterController>();
+            playerController = playerObject.AddComponent<UnifiedPlayerController>();
+            characterController = playerObject.AddComponent<UnifiedPlayerController>();
             var inputRelay = playerObject.AddComponent<InputRelay>();
             // Note: MOBATestScene functionality is now integrated directly into this class
             // No need for separate test scene component
@@ -432,11 +417,11 @@ namespace MOBA
             if (playerController != null)
             {
                 // Use reflection to set private fields since they might not have public setters
-                var healthField = typeof(PlayerController).GetField("maxHealth", 
+                var healthField = typeof(UnifiedPlayerController).GetField("maxHealth", 
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                 healthField?.SetValue(playerController, playerMaxHealth);
                 
-                var currentHealthField = typeof(PlayerController).GetField("currentHealth", 
+                var currentHealthField = typeof(UnifiedPlayerController).GetField("currentHealth", 
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                 currentHealthField?.SetValue(playerController, playerMaxHealth);
             }
@@ -444,11 +429,11 @@ namespace MOBA
             if (characterController != null)
             {
                 // Configure movement settings
-                var moveSpeedField = typeof(MOBACharacterController).GetField("moveSpeed", 
+                var moveSpeedField = typeof(UnifiedPlayerController).GetField("moveSpeed", 
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                 moveSpeedField?.SetValue(characterController, playerMoveSpeed);
                 
-                var jumpForceField = typeof(MOBACharacterController).GetField("jumpForce", 
+                var jumpForceField = typeof(UnifiedPlayerController).GetField("jumpForce", 
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                 jumpForceField?.SetValue(characterController, playerJumpForce);
             }
@@ -704,10 +689,8 @@ namespace MOBA
             antiCheatObj.AddComponent<AntiCheatSystem>();
             createdObjects.Add(antiCheatObj);
 
-            // Create Lag Compensation Manager
-            var lagCompObj = new GameObject("LagCompensationManager");
-            lagCompObj.AddComponent<LagCompensationManager>();
-            createdObjects.Add(lagCompObj);
+            // REMOVED: LagCompensationManager was removed during cleanup
+            // Network lag compensation is now handled by Unity Netcode directly
 
             yield return null;
         }
@@ -862,7 +845,7 @@ namespace MOBA
                 if (scoringZone != null)
                 {
                     // Set scoring zone reference in player controller
-                    var field = typeof(PlayerController).GetField("scoringZone", 
+                    var field = typeof(UnifiedPlayerController).GetField("scoringZone", 
                         System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                     field?.SetValue(playerController, scoringZone.transform);
                 }

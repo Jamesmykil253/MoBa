@@ -14,7 +14,7 @@ namespace MOBA
         private bool canDoubleJump;
         private Vector3 jumpDirection;
 
-        public JumpingState(MOBACharacterController controller)
+        public JumpingState(UnifiedPlayerController controller)
         {
             this.controller = controller;
         }

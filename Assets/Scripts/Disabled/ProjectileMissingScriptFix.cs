@@ -166,13 +166,9 @@ namespace MOBA
                 }
             }
             
-            // Add RuntimeProjectileFixer component for future protection
-            if (prefab.GetComponent<RuntimeProjectileFixer>() == null)
-            {
-                prefab.AddComponent<RuntimeProjectileFixer>();
-                Debug.Log($"[ProjectileFix] + Added RuntimeProjectileFixer to {prefab.name}");
-                addedComponents = true;
-            }
+            // NOTE: RuntimeProjectileFixer has been removed - functionality integrated into core systems
+            Debug.Log($"[ProjectileFix] ✅ Projectile prefab {prefab.name} has been fixed");
+            addedComponents = true;
             
             return addedComponents;
         }

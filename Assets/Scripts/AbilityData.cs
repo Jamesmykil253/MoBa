@@ -24,7 +24,9 @@ namespace MOBA
         public Color effectColor = Color.white;
 
         [Header("Behavior")]
-        public bool isProjectile = true;
+        // DISABLED: Projectile system removed for development
+        // public bool isProjectile = true;
+        public bool isInstantCast = true; // Replaced projectile with instant cast for development
         public bool homing = false;
         public LayerMask hitLayers;
 
@@ -76,7 +78,9 @@ namespace MOBA
                 cooldown = this.cooldown,
                 icon = this.icon,
                 effectColor = this.effectColor,
-                isProjectile = this.isProjectile,
+                // DISABLED: Projectile system removed for development
+                // isProjectile = this.isProjectile,
+                isInstantCast = this.isInstantCast, // Replaced projectile with instant cast
                 homing = this.homing,
                 hitLayers = this.hitLayers,
                 damageType = this.damageType,

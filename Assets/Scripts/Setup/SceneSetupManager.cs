@@ -87,13 +87,8 @@ namespace MOBA.Setup
                 }
             }
 
-            // Create CommandManager if not exists
-            if (createMissingComponents && FindAnyObjectByType<CommandManager>() == null)
-            {
-                var commandObj = new GameObject("CommandManager");
-                commandObj.AddComponent<CommandManager>();
-                Debug.Log("[SceneSetupManager] ✅ CommandManager created");
-            }
+            // REMOVED: CommandManager was removed during cleanup
+            // Command pattern was simplified to direct ability casting
 
             // Create AbilitySystem if not exists
             if (createMissingComponents && FindAnyObjectByType<AbilitySystem>() == null)
@@ -149,42 +144,23 @@ namespace MOBA.Setup
             
             Debug.Log("[SceneSetupManager] ProjectilePool creation skipped - projectile system disabled");
 
+            // DISABLED: FlyweightFactory creation removed - part of projectile system
             // Create FlyweightFactory if not exists
-            if (FindAnyObjectByType<FlyweightFactory>() == null)
-            {
-                var factoryObj = new GameObject("FlyweightFactory");
-                factoryObj.AddComponent<FlyweightFactory>();
-                Debug.Log("[SceneSetupManager] ✅ FlyweightFactory created");
-            }
+            // if (FindAnyObjectByType<FlyweightFactory>() == null)
+            // {
+            //     var factoryObj = new GameObject("FlyweightFactory");
+            //     factoryObj.AddComponent<FlyweightFactory>();
+            //     Debug.Log("[SceneSetupManager] ✅ FlyweightFactory created");
+            // }
+            
+            Debug.Log("[SceneSetupManager] FlyweightFactory creation skipped - projectile system disabled");
         }
 
         private void SetupPerformanceSystems()
         {
             Debug.Log("[SceneSetupManager] Setting up performance systems...");
 
-            // Create PerformanceOptimizer if not exists
-            if (FindAnyObjectByType<Performance.PerformanceOptimizer>() == null)
-            {
-                var perfObj = new GameObject("PerformanceOptimizer");
-                perfObj.AddComponent<Performance.PerformanceOptimizer>();
-                Debug.Log("[SceneSetupManager] ✅ PerformanceOptimizer created");
-            }
-
-            // Create MemoryManager if not exists
-            if (FindAnyObjectByType<MemoryManager>() == null)
-            {
-                var memoryObj = new GameObject("MemoryManager");
-                memoryObj.AddComponent<MemoryManager>();
-                Debug.Log("[SceneSetupManager] ✅ MemoryManager created");
-            }
-
-            // Create PerformanceProfiler if not exists
-            if (FindAnyObjectByType<PerformanceProfiler>() == null)
-            {
-                var profilerObj = new GameObject("PerformanceProfiler");
-                profilerObj.AddComponent<PerformanceProfiler>();
-                Debug.Log("[SceneSetupManager] ✅ PerformanceProfiler created");
-            }
+            // REMOVED: All tool systems deleted during cleanup
         }
 
         private void SetupTestingSystems()
@@ -225,14 +201,12 @@ namespace MOBA.Setup
             // Validate critical components
             if (FindAnyObjectByType<ProductionConfig>() != null) criticalComponents++;
             if (FindAnyObjectByType<ServiceRegistry>() != null) criticalComponents++;
-            if (FindAnyObjectByType<CommandManager>() != null) criticalComponents++;
+            // REMOVED: CommandManager was removed during cleanup
             if (FindAnyObjectByType<AbilitySystem>() != null) criticalComponents++;
             // if (FindAnyObjectByType<ProjectilePool>() != null) criticalComponents++; // DISABLED: Projectile system removed
 
             // Validate optional components
-            if (FindAnyObjectByType<Performance.PerformanceOptimizer>() != null) optionalComponents++;
-            if (FindAnyObjectByType<MemoryManager>() != null) optionalComponents++;
-            if (FindAnyObjectByType<PerformanceProfiler>() != null) optionalComponents++;
+            // REMOVED: Tool systems deleted during cleanup
             if (FindAnyObjectByType<Networking.NetworkSystemIntegration>() != null) optionalComponents++;
 
             Debug.Log($"[SceneSetupManager] Validation Results:");

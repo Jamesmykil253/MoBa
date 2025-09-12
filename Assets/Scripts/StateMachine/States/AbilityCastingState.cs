@@ -15,7 +15,7 @@ namespace MOBA
         private Vector3 targetPosition;
         private AbilityData currentAbility;
 
-        public AbilityCastingState(MOBACharacterController controller)
+        public AbilityCastingState(UnifiedPlayerController controller)
         {
             this.controller = controller;
         }

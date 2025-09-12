@@ -38,10 +38,7 @@ namespace MOBA.Networking
         public event Action<NetworkPlayerController, AbilityType> OnAbilityCooldownReady;
         public event Action<ulong, AbilityType> OnAbilityRateLimitExceeded;
 
-        // Projectile events
-        public event Action<NetworkProjectile, Vector3> OnProjectileHit;
-        public event Action<NetworkProjectile> OnProjectileDestroyed;
-        public event Action<NetworkProjectile, Vector3> OnProjectileCreated;
+        // NOTE: Projectile events removed - projectile system disabled
 
         // Game state events
         public event Action<ulong> OnClientConnected;
@@ -106,21 +103,7 @@ namespace MOBA.Networking
             OnAbilityRateLimitExceeded?.Invoke(clientId, ability);
         }
 
-        // Projectile event publishers
-        public void PublishProjectileHit(NetworkProjectile projectile, Vector3 hitPoint)
-        {
-            OnProjectileHit?.Invoke(projectile, hitPoint);
-        }
-
-        public void PublishProjectileDestroyed(NetworkProjectile projectile)
-        {
-            OnProjectileDestroyed?.Invoke(projectile);
-        }
-
-        public void PublishProjectileCreated(NetworkProjectile projectile, Vector3 spawnPosition)
-        {
-            OnProjectileCreated?.Invoke(projectile, spawnPosition);
-        }
+        // NOTE: Projectile event publishers removed - projectile system disabled
 
         // Game state event publishers
         public void PublishClientConnected(ulong clientId)
@@ -192,19 +175,20 @@ namespace MOBA.Networking
             OnAbilityRateLimitExceeded -= observer.OnAbilityRateLimitExceeded;
         }
 
-        public void SubscribeToProjectileEvents(IProjectileEventObserver observer)
-        {
-            OnProjectileHit += observer.OnProjectileHit;
-            OnProjectileDestroyed += observer.OnProjectileDestroyed;
-            OnProjectileCreated += observer.OnProjectileCreated;
-        }
+        // DISABLED: Projectile event subscription methods removed - projectile system disabled
+        // public void SubscribeToProjectileEvents(IProjectileEventObserver observer)
+        // {
+        //     OnProjectileHit += observer.OnProjectileHit;
+        //     OnProjectileDestroyed += observer.OnProjectileDestroyed;
+        //     OnProjectileCreated += observer.OnProjectileCreated;
+        // }
 
-        public void UnsubscribeFromProjectileEvents(IProjectileEventObserver observer)
-        {
-            OnProjectileHit -= observer.OnProjectileHit;
-            OnProjectileDestroyed -= observer.OnProjectileDestroyed;
-            OnProjectileCreated -= observer.OnProjectileCreated;
-        }
+        // public void UnsubscribeFromProjectileEvents(IProjectileEventObserver observer)
+        // {
+        //     OnProjectileHit -= observer.OnProjectileHit;
+        //     OnProjectileDestroyed -= observer.OnProjectileDestroyed;
+        //     OnProjectileCreated -= observer.OnProjectileCreated;
+        // }
     }
 
     // Observer interfaces
@@ -224,12 +208,7 @@ namespace MOBA.Networking
         void OnAbilityRateLimitExceeded(ulong clientId, AbilityType ability);
     }
 
-    public interface IProjectileEventObserver
-    {
-        void OnProjectileHit(NetworkProjectile projectile, Vector3 hitPoint);
-        void OnProjectileDestroyed(NetworkProjectile projectile);
-        void OnProjectileCreated(NetworkProjectile projectile, Vector3 spawnPosition);
-    }
+    // NOTE: IProjectileEventObserver interface removed - projectile system disabled
 
     public interface INetworkEventObserver
     {

@@ -12,7 +12,6 @@ namespace MOBA.Networking
         [Header("System References")]
         [SerializeField] private LobbySystem lobbySystem;
         [SerializeField] private NetworkSystemIntegration networkIntegration;
-        [SerializeField] private MOBA.UI.LobbyUI lobbyUI;
         
         [Header("Auto Integration Settings")]
         [SerializeField] private bool enableAutoIntegration = true;
@@ -36,8 +35,8 @@ namespace MOBA.Networking
                 lobbySystem = FindFirstObjectByType<LobbySystem>();
             if (networkIntegration == null)
                 networkIntegration = FindFirstObjectByType<NetworkSystemIntegration>();
-            if (lobbyUI == null)
-                lobbyUI = FindFirstObjectByType<MOBA.UI.LobbyUI>();
+            // REMOVED: LobbyUI was removed during cleanup
+            // UI integration is now handled separately
         }
         
         private void Start()

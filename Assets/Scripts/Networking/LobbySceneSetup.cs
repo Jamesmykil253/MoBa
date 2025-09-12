@@ -13,7 +13,7 @@ namespace MOBA.Networking
         [Header("Auto Setup Configuration")]
         [SerializeField] private bool autoSetupOnAwake = false; // Changed to manual setup only
         [SerializeField] private bool createLobbySystemIfMissing = true;
-        [SerializeField] private bool createLobbyUIIfMissing = true;
+        // REMOVED: UI system simplified
         [SerializeField] private bool createLobbyIntegrationIfMissing = true;
         
         [Header("Lobby System Prefabs (Optional)")]
@@ -43,7 +43,7 @@ namespace MOBA.Networking
             
             // Setup lobby systems
             SetupLobbySystem();
-            SetupLobbyUI();
+            // SetupLobbyUI(); // REMOVED: LobbyUI was removed during cleanup
             SetupLobbyIntegration();
             
             Debug.Log("[LobbySceneSetup] ✅ Lobby scene setup complete!");
@@ -124,6 +124,12 @@ namespace MOBA.Networking
         
         private void SetupLobbyUI()
         {
+            // REMOVED: LobbyUI was removed during cleanup
+            // UI is now handled by simpler systems
+            Debug.Log("[LobbySceneSetup] LobbyUI setup skipped - UI system simplified");
+            return;
+            
+            /* DISABLED - LobbyUI system removed
             var lobbyUI = FindFirstObjectByType<MOBA.UI.LobbyUI>();
             if (lobbyUI == null && createLobbyUIIfMissing)
             {
@@ -164,6 +170,7 @@ namespace MOBA.Networking
             
             Debug.Log("[LobbySceneSetup] ✅ Basic LobbyUI created");
             return lobbyUIGO;
+            */ // End of disabled LobbyUI code
         }
         
         private void SetupLobbyIntegration()
@@ -196,9 +203,8 @@ namespace MOBA.Networking
             var lobbySystem = FindFirstObjectByType<LobbySystem>();
             validation.AppendLine($"LobbySystem: {(lobbySystem != null ? "✅ Present" : "❌ Missing")}");
             
-            // Check LobbyUI
-            var lobbyUI = FindFirstObjectByType<MOBA.UI.LobbyUI>();
-            validation.AppendLine($"LobbyUI: {(lobbyUI != null ? "✅ Present" : "❌ Missing")}");
+            // Check LobbyUI - REMOVED: UI system simplified
+            validation.AppendLine($"LobbyUI: ❌ Removed (UI system simplified)");
             
             // Check LobbyIntegration
             var lobbyIntegration = FindFirstObjectByType<LobbyIntegration>();
@@ -223,10 +229,10 @@ namespace MOBA.Networking
         
         // Public getters for validation
         public bool IsLobbySystemPresent => FindFirstObjectByType<LobbySystem>() != null;
-        public bool IsLobbyUIPresent => FindFirstObjectByType<MOBA.UI.LobbyUI>() != null;
+        public bool IsLobbyUIPresent => false; // REMOVED: UI system simplified
         public bool IsLobbyIntegrationPresent => FindFirstObjectByType<LobbyIntegration>() != null;
         public bool IsNetworkManagerPresent => FindFirstObjectByType<NetworkManager>() != null;
-        public bool IsFullyConfigured => IsLobbySystemPresent && IsLobbyUIPresent && IsLobbyIntegrationPresent && IsNetworkManagerPresent;
+        public bool IsFullyConfigured => IsLobbySystemPresent && IsLobbyIntegrationPresent && IsNetworkManagerPresent;
         
         // Runtime configuration methods
         public void EnableAutoLobbyCreation(bool enable)

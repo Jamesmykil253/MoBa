@@ -13,7 +13,7 @@ namespace MOBA
         private float stunStartTime;
         private bool hasPlayedStunEffect;
 
-        public StunnedState(MOBACharacterController controller)
+        public StunnedState(UnifiedPlayerController controller)
         {
             this.controller = controller;
         }

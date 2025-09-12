@@ -64,6 +64,47 @@ namespace MOBA
         }
 
         /// <summary>
+        /// Safe get method with Result pattern for error handling
+        /// Based on Code Complete defensive programming principles
+        /// </summary>
+        public bool TryGet(out T obj)
+        {
+            obj = null;
+            
+            if (disposed) 
+            {
+                Debug.LogError("[ObjectPool] Cannot get object from disposed pool");
+                return false;
+            }
+            
+            try
+            {
+                if (availableObjects.Count > 0)
+                {
+                    obj = availableObjects.Dequeue();
+                }
+                else
+                {
+                    obj = CreateNewObject();
+                }
+
+                if (obj == null)
+                {
+                    Debug.LogError("[ObjectPool] Failed to create or retrieve object");
+                    return false;
+                }
+
+                obj.gameObject.SetActive(true);
+                return true;
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[ObjectPool] Error getting object: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Returns an object to the pool for reuse
         /// </summary>
         /// <param name="obj">Object to return to the pool</param>

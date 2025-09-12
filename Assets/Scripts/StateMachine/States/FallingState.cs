@@ -13,7 +13,7 @@ namespace MOBA
         private float maxFallSpeed = 20f; // Terminal velocity
         private bool hasPlayedFallAnimation;
 
-        public FallingState(MOBACharacterController controller)
+        public FallingState(UnifiedPlayerController controller)
         {
             this.controller = controller;
         }
