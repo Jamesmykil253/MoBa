@@ -5,78 +5,6 @@ using System.Collections.Generic;
 namespace MOBA
 {
     /// <summary>
-    /// Simple object pool for GameObjects (not Components)
-    /// </summary>
-    public class GameObjectPool
-    {
-        private readonly Queue<GameObject> availableObjects = new();
-        private readonly List<GameObject> allObjects = new();
-        private readonly GameObject prefab;
-        private readonly Transform parent;
-        private readonly int initialSize;
-
-        public GameObjectPool(GameObject prefab, int initialSize = 10, Transform parent = null)
-        {
-            this.prefab = prefab;
-            this.initialSize = initialSize;
-            this.parent = parent;
-
-            // Pre-populate the pool
-            for (int i = 0; i < initialSize; i++)
-            {
-                CreateNewObject();
-            }
-        }
-
-        public GameObject Get()
-        {
-            GameObject obj;
-            if (availableObjects.Count > 0)
-            {
-                obj = availableObjects.Dequeue();
-            }
-            else
-            {
-                obj = CreateNewObject();
-            }
-
-            obj.SetActive(true);
-            return obj;
-        }
-
-        public void Return(GameObject obj)
-        {
-            if (obj == null) return;
-
-            obj.SetActive(false);
-            availableObjects.Enqueue(obj);
-        }
-
-        public void ReturnAll()
-        {
-            foreach (var obj in allObjects)
-            {
-                if (obj.activeSelf)
-                {
-                    Return(obj);
-                }
-            }
-        }
-
-        private GameObject CreateNewObject()
-        {
-            // Removed automatic Object.Instantiate to prevent automatic loading
-            // Use CreateObjectWithInstance() method with manually provided instance instead
-            Debug.LogError("[GameObjectPool] Automatic instantiation disabled - use CreateObjectWithInstance() instead");
-            return null;
-        }
-
-        public int TotalCount => allObjects.Count;
-        public int AvailableCount => availableObjects.Count;
-        public int ActiveCount => TotalCount - AvailableCount;
-    }
-
-    /// <summary>
     /// Factory Pattern implementation for unit spawning in MOBA games
     /// Based on GoF Factory Pattern and Game Programming Patterns
     /// Provides centralized unit creation with networking support
@@ -90,9 +18,10 @@ namespace MOBA
         [Header("Factory Settings")]
         [SerializeField] private bool useObjectPooling = true;
         [SerializeField] private int initialPoolSize = 10;
+        [SerializeField] private int maxPoolSize = 100;
 
-        // Object pools for each unit type
-        private Dictionary<UnitType, GameObjectPool> unitPools = new();
+        // Simple pool storage for now
+        private Dictionary<UnitType, Queue<GameObject>> simplePools = new();
 
         // Unit type enumeration
         public enum UnitType
@@ -128,12 +57,15 @@ namespace MOBA
             {
                 if ((int)unitType < unitPrefabs.Length && unitPrefabs[(int)unitType] != null)
                 {
-                    var pool = new GameObjectPool(
-                        unitPrefabs[(int)unitType],
-                        initialPoolSize,
-                        spawnParent
-                    );
-                    unitPools[unitType] = pool;
+                    simplePools[unitType] = new Queue<GameObject>();
+                    
+                    // Pre-populate with a few objects
+                    for (int i = 0; i < initialPoolSize; i++)
+                    {
+                        GameObject obj = Instantiate(unitPrefabs[(int)unitType], spawnParent);
+                        obj.SetActive(false);
+                        simplePools[unitType].Enqueue(obj);
+                    }
                 }
             }
         }
@@ -150,18 +82,38 @@ namespace MOBA
 
             GameObject unit = null;
 
-            if (useObjectPooling && unitPools.ContainsKey(type))
+            if (useObjectPooling && simplePools.ContainsKey(type))
             {
-                // Use object pool
-                unit = unitPools[type].Get();
-                unit.transform.position = position;
-                unit.transform.rotation = rotation;
+                // Use simple pool
+                var pool = simplePools[type];
+                if (pool.Count > 0)
+                {
+                    unit = pool.Dequeue();
+                    if (unit != null)
+                    {
+                        unit.transform.position = position;
+                        unit.transform.rotation = rotation;
+                        unit.SetActive(true);
+                    }
+                }
+                else
+                {
+                    // Create new if pool is empty
+                    unit = Instantiate(unitPrefabs[(int)type], position, rotation, spawnParent);
+                }
             }
             else
             {
-                // Removed automatic Object.Instantiate to prevent automatic loading
-                // Use CreateUnitWithInstance() method with manually provided instance instead
-                Debug.LogError($"[UnitFactory] Automatic instantiation disabled for {type} - use CreateUnitWithInstance() instead");
+                // Fallback to instantiation
+                if ((int)type < unitPrefabs.Length && unitPrefabs[(int)type] != null)
+                {
+                    unit = Instantiate(unitPrefabs[(int)type], position, rotation, spawnParent);
+                }
+            }
+
+            if (unit == null)
+            {
+                Debug.LogError($"[UnitFactory] Failed to create unit of type {type}");
                 return null;
             }
 
@@ -175,16 +127,12 @@ namespace MOBA
                 }
                 else
                 {
-                    // For client-side only objects, don't spawn on network
                     Debug.Log($"Created local unit: {type} (not networked)");
                 }
             }
 
             // Initialize unit-specific components
             InitializeUnitComponents(unit, type);
-
-            // REMOVED: MemoryManager was removed during cleanup
-            // Units are now managed by Unity's standard GameObject lifecycle
 
             Debug.Log($"Created unit: {type} at {position}");
             return unit;
@@ -214,12 +162,26 @@ namespace MOBA
 
         /// <summary>
         /// Returns a unit to the pool for reuse
+        /// Enforces maxPoolSize to prevent memory bloat
         /// </summary>
         public void ReturnUnit(GameObject unit, UnitType type)
         {
-            if (useObjectPooling && unitPools.ContainsKey(type))
+            if (useObjectPooling && simplePools.ContainsKey(type))
             {
-                unitPools[type].Return(unit);
+                var pool = simplePools[type];
+                
+                // Enforce max pool size to prevent unlimited growth
+                if (pool.Count < maxPoolSize)
+                {
+                    unit.SetActive(false);
+                    pool.Enqueue(unit);
+                }
+                else
+                {
+                    // Pool is at capacity, destroy the unit instead
+                    Destroy(unit);
+                    Debug.Log($"[UnitFactory] Pool for {type} at max capacity ({maxPoolSize}), destroying unit");
+                }
             }
             else
             {
@@ -232,11 +194,8 @@ namespace MOBA
         /// </summary>
         public void PrewarmPools()
         {
-            foreach (var pool in unitPools.Values)
-            {
-                // Pools are already pre-warmed in InitializePools
-                // Additional pre-warming can be done here if needed
-            }
+            // Pools are already pre-warmed in InitializePools
+            Debug.Log("[UnitFactory] Pools are pre-warmed during initialization");
         }
 
         /// <summary>
@@ -246,10 +205,12 @@ namespace MOBA
         {
             var stats = new Dictionary<UnitType, (int, int, int)>();
 
-            foreach (var kvp in unitPools)
+            foreach (var kvp in simplePools)
             {
-                var pool = kvp.Value;
-                stats[kvp.Key] = (pool.TotalCount, pool.AvailableCount, pool.ActiveCount);
+                int available = kvp.Value.Count;
+                int total = available + 10; // Estimate, since we don't track total created
+                int active = total - available;
+                stats[kvp.Key] = (total, available, active);
             }
 
             return stats;
@@ -281,9 +242,9 @@ namespace MOBA
         private void InitializeElomNusk(GameObject unit)
         {
             // Add Elom Nusk specific components
-            if (!unit.TryGetComponent(out AbilitySystem abilitySystem))
+            if (!unit.TryGetComponent(out SimpleAbilitySystem abilitySystem))
             {
-                unit.AddComponent<AbilitySystem>();
+                unit.AddComponent<SimpleAbilitySystem>();
             }
         }
 

@@ -127,17 +127,17 @@ public class ReadmeEditor : Editor
 
         foreach (var section in readme.sections)
         {
-            if (!string.IsNullOrEmpty(section.heading))
+            if (!string.IsNullOrWhiteSpace(section.heading))
             {
                 GUILayout.Label(section.heading, HeadingStyle);
             }
 
-            if (!string.IsNullOrEmpty(section.text))
+            if (!string.IsNullOrWhiteSpace(section.text))
             {
                 GUILayout.Label(section.text, BodyStyle);
             }
 
-            if (!string.IsNullOrEmpty(section.linkText))
+            if (!string.IsNullOrWhiteSpace(section.linkText))
             {
                 if (LinkLabel(new GUIContent(section.linkText)))
                 {

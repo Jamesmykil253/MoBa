@@ -124,8 +124,7 @@ namespace MOBA
             foreach (var collider in potentialTargets)
             {
                 // Look for player controllers or other damageable objects
-                if (collider.GetComponent<UnifiedPlayerController>() != null || 
-                    collider.GetComponent<NetworkPlayerController>() != null)
+                if (collider.GetComponent<SimplePlayerController>() != null)
                 {
                     float distance = Vector3.Distance(transform.position, collider.transform.position);
                     if (distance < closestDistance)
@@ -150,8 +149,8 @@ namespace MOBA
             // Use faster speed when chasing
             float currentSpeed = isChasing ? moveSpeed * 1.2f : moveSpeed;
             
-            // Move towards target
-            rb.linearVelocity = new Vector3(direction.x * currentSpeed * Time.deltaTime, rb.linearVelocity.y, direction.z * currentSpeed * Time.deltaTime);
+            // FIXED: Remove Time.deltaTime from velocity calculation - velocity is already per-second
+            rb.linearVelocity = new Vector3(direction.x * currentSpeed, rb.linearVelocity.y, direction.z * currentSpeed);
 
             // Look at target
             transform.LookAt(new Vector3(target.position.x, transform.position.y, target.position.z));
@@ -169,7 +168,8 @@ namespace MOBA
 
                 // Use slower speed when returning (not chasing)
                 float returnSpeed = isChasing ? moveSpeed : moveSpeed * 0.5f;
-                rb.linearVelocity = new Vector3(direction.x * returnSpeed * Time.deltaTime, rb.linearVelocity.y, direction.z * returnSpeed * Time.deltaTime);
+                // FIXED: Remove Time.deltaTime from velocity calculation
+                rb.linearVelocity = new Vector3(direction.x * returnSpeed, rb.linearVelocity.y, direction.z * returnSpeed);
             }
             else
             {

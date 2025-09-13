@@ -236,22 +236,8 @@ namespace MOBA
             {
                 target.TakeDamage(damage);
 
-                // Publish damage event
-                EventBus.Publish(new DamageDealtEvent(
-                    gameObject, // attacker (projectile)
-                    other.gameObject, // defender
-                    DamageResult.Create(
-                        damage,
-                        damage,
-                        DamageType.Physical,
-                        false,
-                        0f,
-                        0f,
-                        0f
-                    ),
-                    null, // ability data
-                    transform.position // attack position
-                ));
+                // Simple damage logging instead of complex event system
+                Debug.Log($"Projectile dealt {damage} damage to {other.gameObject.name}");
 
                 ReturnToPool();
             }
@@ -265,22 +251,8 @@ namespace MOBA
             {
                 target.TakeDamage(damage);
 
-                // Publish damage event
-                EventBus.Publish(new DamageDealtEvent(
-                    gameObject,
-                    collision.gameObject,
-                    DamageResult.Create(
-                        damage,
-                        damage,
-                        DamageType.Physical,
-                        false,
-                        0f,
-                        0f,
-                        0f
-                    ),
-                    null,
-                    collision.contacts[0].point
-                ));
+                // Simple damage logging instead of complex event system
+                Debug.Log($"Projectile dealt {damage} damage to {collision.gameObject.name}");
 
                 ReturnToPool();
             }
