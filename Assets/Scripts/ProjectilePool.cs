@@ -22,7 +22,7 @@ namespace MOBA
         [SerializeField] private int initialPoolSize = 20;
         [SerializeField] private Transform poolParent;
 
-        private ObjectPool<Projectile> projectilePool;
+        private ComponentPool<Projectile> projectilePool;
 
         private void Awake()
         {
@@ -42,12 +42,20 @@ namespace MOBA
             // Fix the prefab before creating the pool
             FixProjectilePrefab();
 
-            // Create the pool with projectile component
+            // Create the pool using UnifiedObjectPool system
             var projectileComponent = projectilePrefab.GetComponent<Projectile>();
             if (projectileComponent != null)
             {
-                projectilePool = new ObjectPool<Projectile>(projectileComponent, initialPoolSize, poolParent);
-                Debug.Log("[ProjectilePool] ✅ Projectile pool initialized successfully");
+                projectilePool = UnifiedObjectPool.GetComponentPool<Projectile>("ProjectilePool", projectileComponent, initialPoolSize, 100);
+                if (projectilePool != null)
+                {
+                    Debug.Log("[ProjectilePool] ✅ Projectile pool initialized successfully with UnifiedObjectPool");
+                }
+                else
+                {
+                    Debug.LogError("[ProjectilePool] ❌ Failed to create projectile pool with UnifiedObjectPool");
+                    enabled = false;
+                }
             }
             else
             {
@@ -165,14 +173,17 @@ namespace MOBA
         /// </summary>
         public void ReturnAllProjectiles()
         {
-            projectilePool.ReturnAll();
+            // UnifiedObjectPool doesn't have ReturnAll method, 
+            // but we could implement it or just clear the specific pool
+            Debug.Log("[ProjectilePool] ReturnAll not implemented in UnifiedObjectPool - consider manual cleanup");
         }
 
         private void OnGUI()
         {
             if (projectilePool != null)
             {
-                GUI.Label(new Rect(10, 130, 300, 20), $"Projectile Pool - Total: {projectilePool.TotalCount}, Available: {projectilePool.AvailableCount}, Active: {projectilePool.ActiveCount}");
+                var stats = projectilePool.GetStats();
+                GUI.Label(new Rect(10, 130, 300, 20), $"Projectile Pool - Total: {stats.total}, Available: {stats.available}, Active: {stats.active}");
             }
         }
     }

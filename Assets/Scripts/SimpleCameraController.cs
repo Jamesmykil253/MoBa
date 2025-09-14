@@ -50,35 +50,70 @@ namespace MOBA
             UpdateCameraPosition();
         }
         
+        // New Input System support
+        // Requires InputActionAsset with actions: "Camera/Zoom" (Value: float), "Camera/Pan" (Button), "Camera/PointerPosition" (Value: Vector2)
+        [Header("Input System")]
+        [SerializeField] private UnityEngine.InputSystem.InputActionAsset inputActions;
+        private UnityEngine.InputSystem.InputAction zoomAction;
+        private UnityEngine.InputSystem.InputAction panAction;
+        private UnityEngine.InputSystem.InputAction pointerPositionAction;
+        private Vector2 lastPointerPosition;
+
+        void OnEnable()
+        {
+            if (inputActions != null)
+            {
+                zoomAction = inputActions.FindAction("Camera/Zoom");
+                panAction = inputActions.FindAction("Camera/Pan");
+                pointerPositionAction = inputActions.FindAction("Camera/PointerPosition");
+                zoomAction?.Enable();
+                panAction?.Enable();
+                pointerPositionAction?.Enable();
+            }
+        }
+
+        void OnDisable()
+        {
+            zoomAction?.Disable();
+            panAction?.Disable();
+            pointerPositionAction?.Disable();
+        }
+
         void HandleInput()
         {
-            // Zoom with scroll wheel
-            float scroll = Input.GetAxis("Mouse ScrollWheel");
-            if (scroll != 0)
+            if (zoomAction != null)
             {
-                offset = Vector3.Lerp(offset, offset + Vector3.forward * scroll * zoomSpeed, Time.deltaTime * 10f);
-                offset = Vector3.ClampMagnitude(offset, maxZoom);
-                if (offset.magnitude < minZoom)
-                    offset = offset.normalized * minZoom;
+                float scroll = zoomAction.ReadValue<float>();
+                if (Mathf.Abs(scroll) > 0.01f)
+                {
+                    offset = Vector3.Lerp(offset, offset + Vector3.forward * scroll * zoomSpeed, Time.deltaTime * 10f);
+                    offset = Vector3.ClampMagnitude(offset, maxZoom);
+                    if (offset.magnitude < minZoom)
+                        offset = offset.normalized * minZoom;
+                }
             }
-            
-            // Pan with middle mouse button
-            if (Input.GetMouseButtonDown(2))
+
+            if (panAction != null && pointerPositionAction != null)
             {
-                isPanning = true;
-                lastMousePosition = Input.mousePosition;
-            }
-            else if (Input.GetMouseButtonUp(2))
-            {
-                isPanning = false;
-            }
-            
-            if (isPanning)
-            {
-                Vector3 delta = Input.mousePosition - lastMousePosition;
-                Vector3 panAmount = new Vector3(-delta.x, 0, -delta.y) * 0.01f;
-                offset += panAmount;
-                lastMousePosition = Input.mousePosition;
+                bool panPressed = panAction.ReadValue<float>() > 0.5f;
+                Vector2 pointerPos = pointerPositionAction.ReadValue<Vector2>();
+                if (panPressed && !isPanning)
+                {
+                    isPanning = true;
+                    lastPointerPosition = pointerPos;
+                }
+                else if (!panPressed && isPanning)
+                {
+                    isPanning = false;
+                }
+
+                if (isPanning)
+                {
+                    Vector2 delta = pointerPos - lastPointerPosition;
+                    Vector3 panAmount = new Vector3(-delta.x, 0, -delta.y) * 0.01f;
+                    offset += panAmount;
+                    lastPointerPosition = pointerPos;
+                }
             }
         }
         

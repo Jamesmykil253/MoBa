@@ -196,15 +196,20 @@ namespace MOBA
             float distanceToTarget = Vector3.Distance(transform.position, target.position);
             if (distanceToTarget <= attackRange)
             {
-                // Deal damage to target
-                var damageable = target.GetComponent<IDamageable>();
-                if (damageable != null)
+                // Line-of-sight check: raycast from enemy to target, ignore self
+                Vector3 direction = (target.position - transform.position).normalized;
+                if (!Physics.Raycast(transform.position, direction, distanceToTarget, ~LayerMask.GetMask("Enemy")))
                 {
-                    damageable.TakeDamage(damage);
-                    Debug.Log($"[EnemyController] Enemy attacked {target.name} for {damage} damage");
+                    // Deal damage to target
+                    var damageable = target.GetComponent<IDamageable>();
+                    if (damageable != null)
+                    {
+                        damageable.TakeDamage(damage);
+                        Debug.Log($"[EnemyController] Enemy attacked {target.name} for {damage} damage");
 
-                    // Create attack effect
-                    CreateAttackEffect();
+                        // Create attack effect
+                        CreateAttackEffect();
+                    }
                 }
             }
         }

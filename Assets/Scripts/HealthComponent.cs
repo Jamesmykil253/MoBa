@@ -174,6 +174,13 @@ namespace MOBA
             }
         }
 
+        private void OnDestroy()
+        {
+            // Clean up events to prevent memory leaks
+            OnHealthChanged = null;
+            OnDeath = null;
+        }
+
         // Gizmos for debugging
         private void OnDrawGizmosSelected()
         {

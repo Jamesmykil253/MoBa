@@ -6,10 +6,20 @@ namespace MOBA
 {
     /// <summary>
     /// Simple player controller - updated with modern Unity 6000+ Input System
+    /// Now uses configuration system instead of hardcoded values
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
     public class SimplePlayerController : MonoBehaviour, IDamageable
     {
+        [Header("Config Reference")]
+        [SerializeField] private MOBA.Configuration.PlayerConfig playerConfig;
+        private bool isInvulnerable = false;
+        // Slope and platform detection
+        private Vector3 groundNormal = Vector3.up;
+        private Transform currentPlatform = null;
+        [Header("Combat Cooldown")]
+        [SerializeField] private float attackCooldown = 0.5f;
+        private float lastAttackTime = -999f;
         [Header("Player Stats")]
         public float maxHealth = 100f;
         public float currentHealth = 100f;
@@ -113,6 +123,21 @@ namespace MOBA
             attackAction?.Disable();
         }
 
+        void OnDestroy()
+        {
+            // Properly dispose of input actions to prevent memory leaks
+            moveAction?.Disable();
+            jumpAction?.Disable();
+            attackAction?.Disable();
+            
+            // Unsubscribe from any events to prevent memory leaks
+            OnHealthChanged = null;
+            OnDeath = null;
+            
+            // Clean up event system subscriptions if any were made
+            // (This would be added if the controller subscribes to events)
+        }
+
         void Update()
         {
             HandleInput();
@@ -131,53 +156,55 @@ namespace MOBA
         void CheckGrounded()
         {
             if (groundCheckPoint == null) return;
-            
-            // Use sphere check for more reliable ground detection
+
+            // Sphere check for basic ground contact
             isGrounded = Physics.CheckSphere(
-                groundCheckPoint.position, 
-                groundCheckDistance, 
-                groundLayerMask, 
+                groundCheckPoint.position,
+                groundCheckDistance,
+                groundLayerMask,
                 QueryTriggerInteraction.Ignore
             );
+
+            // Raycast for slope and platform detection
+            RaycastHit hit;
+            if (Physics.Raycast(transform.position, Vector3.down, out hit, groundCheckDistance + 0.2f, groundLayerMask, QueryTriggerInteraction.Ignore))
+            {
+                groundNormal = hit.normal;
+                isGrounded = true;
+                // Detect moving platform
+                if (hit.collider.attachedRigidbody != null && !hit.collider.attachedRigidbody.isKinematic)
+                {
+                    currentPlatform = hit.collider.transform;
+                }
+                else
+                {
+                    currentPlatform = null;
+                }
+            }
+            else
+            {
+                groundNormal = Vector3.up;
+                currentPlatform = null;
+            }
         }
 
         void HandleInput()
         {
-            // Modern Input System approach - much more robust than legacy Input.GetAxis
+            // Modern Input System approach only
             if (moveAction != null)
             {
                 Vector2 inputVector = moveAction.ReadValue<Vector2>();
                 moveInput = new Vector3(inputVector.x, 0, inputVector.y);
             }
-            else
-            {
-                // Fallback to legacy input only if new Input System not available
-                moveInput.x = Input.GetAxis("Horizontal");
-                moveInput.z = Input.GetAxis("Vertical");
-            }
 
             // Jump with modern Input System
-            if (jumpAction != null)
-            {
-                if (jumpAction.WasPressedThisFrame() && isGrounded)
-                {
-                    Jump();
-                }
-            }
-            else if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
+            if (jumpAction != null && jumpAction.WasPressedThisFrame() && isGrounded)
             {
                 Jump();
             }
 
             // Attack with modern Input System
-            if (attackAction != null)
-            {
-                if (attackAction.WasPressedThisFrame())
-                {
-                    Attack();
-                }
-            }
-            else if (Input.GetMouseButtonDown(0))
+            if (attackAction != null && attackAction.WasPressedThisFrame())
             {
                 Attack();
             }
@@ -205,26 +232,35 @@ namespace MOBA
 
         void Attack()
         {
-            // Simple attack - find enemies in range and damage them
+            // Attack cooldown check
+            if (Time.time < lastAttackTime + attackCooldown)
+                return;
+
             Collider[] enemies = Physics.OverlapSphere(transform.position, attackRange);
             foreach (var enemy in enemies)
             {
                 if (enemy.CompareTag("Enemy"))
                 {
-                    // Cache GetComponent call for better performance
-                    if (enemy.TryGetComponent<IDamageable>(out var damageable))
+                    // Line-of-sight check: raycast from player to enemy, ignore self
+                    Vector3 direction = (enemy.transform.position - transform.position).normalized;
+                    float distance = Vector3.Distance(transform.position, enemy.transform.position);
+                    if (!Physics.Raycast(transform.position, direction, distance, ~LayerMask.GetMask("Player")))
                     {
-                        damageable.TakeDamage(damage);
+                        if (enemy.TryGetComponent<IDamageable>(out var damageable))
+                        {
+                            damageable.TakeDamage(damage);
+                        }
                     }
                 }
             }
+            lastAttackTime = Time.time;
         }
 
         public void TakeDamage(float damageAmount)
         {
+            if (isInvulnerable) return;
             currentHealth -= damageAmount;
             OnHealthChanged?.Invoke(currentHealth);
-
             if (currentHealth <= 0)
             {
                 Die();
@@ -243,10 +279,30 @@ namespace MOBA
 
         void Die()
         {
+
             OnDeath?.Invoke();
-            // Simple respawn or game over logic
+            // Start respawn coroutine
+            StartCoroutine(RespawnCoroutine());
+        }
+
+        private System.Collections.IEnumerator RespawnCoroutine()
+        {
+            // Optionally disable input or visuals here
+            gameObject.SetActive(false);
+            yield return new WaitForSeconds(playerConfig != null ? playerConfig.respawnDelay : 3f);
+            // Respawn
             currentHealth = maxHealth;
-            transform.position = Vector3.zero; // Respawn at origin
+            transform.position = playerConfig != null ? playerConfig.respawnPosition : Vector3.zero;
+            gameObject.SetActive(true);
+            StartCoroutine(InvulnerabilityCoroutine(2f)); // 2 seconds of invulnerability
+        }
+
+        private System.Collections.IEnumerator InvulnerabilityCoroutine(float duration)
+        {
+            isInvulnerable = true;
+            // Optionally add visual feedback here
+            yield return new WaitForSeconds(duration);
+            isInvulnerable = false;
         }
 
         void OnDrawGizmos()

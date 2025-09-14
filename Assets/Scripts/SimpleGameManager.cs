@@ -51,12 +51,74 @@ namespace MOBA
             teamScores[0] = 0;
             teamScores[1] = 0;
             gameActive = true;
-            
+
+            ValidateSpawnsAndPrefabs();
+
             SpawnPlayers();
             SpawnEnemies();
-            
+
             Debug.Log("Game Started!");
         }
+        // --- Validation for spawns and prefabs ---
+        private void ValidateSpawnsAndPrefabs()
+        {
+            // Player prefab
+            if (playerPrefab == null)
+                Debug.LogError("[SimpleGameManager] Player prefab is not assigned!");
+            // Enemy prefab
+            if (enemyPrefab == null)
+                Debug.LogError("[SimpleGameManager] Enemy prefab is not assigned!");
+
+            // Player spawn points
+            if (playerSpawnPoints == null || playerSpawnPoints.Length == 0)
+                Debug.LogError("[SimpleGameManager] No player spawn points assigned!");
+            else
+            {
+                for (int i = 0; i < playerSpawnPoints.Length; i++)
+                {
+                    if (playerSpawnPoints[i] == null)
+                        Debug.LogError($"[SimpleGameManager] Player spawn point {i} is null!");
+                }
+                // Check for duplicate/overlapping positions
+                for (int i = 0; i < playerSpawnPoints.Length; i++)
+                {
+                    for (int j = i + 1; j < playerSpawnPoints.Length; j++)
+                    {
+                        if (playerSpawnPoints[i] != null && playerSpawnPoints[j] != null)
+                        {
+                            float dist = Vector3.Distance(playerSpawnPoints[i].position, playerSpawnPoints[j].position);
+                            if (dist < 0.1f)
+                                Debug.LogWarning($"[SimpleGameManager] Player spawn points {i} and {j} are overlapping (distance: {dist})");
+                        }
+                    }
+                }
+            }
+
+            // Enemy spawn points
+            if (enemySpawnPoints == null || enemySpawnPoints.Length == 0)
+                Debug.LogError("[SimpleGameManager] No enemy spawn points assigned!");
+            else
+            {
+                for (int i = 0; i < enemySpawnPoints.Length; i++)
+                {
+                    if (enemySpawnPoints[i] == null)
+                        Debug.LogError($"[SimpleGameManager] Enemy spawn point {i} is null!");
+                }
+                // Check for duplicate/overlapping positions
+                for (int i = 0; i < enemySpawnPoints.Length; i++)
+                {
+                    for (int j = i + 1; j < enemySpawnPoints.Length; j++)
+                    {
+                        if (enemySpawnPoints[i] != null && enemySpawnPoints[j] != null)
+                        {
+                            float dist = Vector3.Distance(enemySpawnPoints[i].position, enemySpawnPoints[j].position);
+                            if (dist < 0.1f)
+                                Debug.LogWarning($"[SimpleGameManager] Enemy spawn points {i} and {j} are overlapping (distance: {dist})");
+                        }
+                    }
+                }
+            }
+    }
         
         void SpawnPlayers()
         {
@@ -119,6 +181,10 @@ namespace MOBA
         
         public void AddScore(int team, int points = 1)
         {
+            if (!gameActive) {
+                Debug.LogWarning("[SimpleGameManager] Attempted to add score after game ended.");
+                return;
+            }
             if (team >= 0 && team < teamScores.Length)
             {
                 teamScores[team] += points;
@@ -128,8 +194,12 @@ namespace MOBA
         
         void EndGame(int winningTeam = -1)
         {
+            if (!gameActive) {
+                Debug.LogWarning("[SimpleGameManager] EndGame called but game is already ended.");
+                return;
+            }
             gameActive = false;
-            
+
             if (winningTeam >= 0)
             {
                 Debug.Log($"Team {winningTeam + 1} Wins!");
@@ -138,7 +208,7 @@ namespace MOBA
             {
                 Debug.Log("Time's Up! Game Over!");
             }
-            
+
             OnGameEnd?.Invoke(winningTeam);
         }
         

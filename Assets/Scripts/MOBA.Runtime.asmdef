@@ -2,11 +2,12 @@
     "name": "MOBA.Runtime",
     "rootNamespace": "MOBA",
     "references": [
-        "Unity.Netcode.Runtime",
-        "Unity.Collections",
-        "Unity.Jobs",
-        "Unity.InputSystem",
-        "Unity.TextMeshPro"
+    "Unity.Netcode.Runtime",
+    "Unity.Collections",
+    "Unity.Jobs",
+    "Unity.InputSystem",
+    "Unity.TextMeshPro",
+    "Unity.Networking.Transport"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
