@@ -27,9 +27,15 @@ namespace MOBA
         private int[] teamScores = new int[2];
         private bool gameActive = true;
         
-        // Events
-        public System.Action<int> OnGameEnd;
-        public System.Action<int, int> OnScoreUpdate;
+    // Events
+    /// <summary>
+    /// Raised when the game ends. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action<int> OnGameEnd;
+    /// <summary>
+    /// Raised when the score updates. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action<int, int> OnScoreUpdate;
         
         void Start()
         {

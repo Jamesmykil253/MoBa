@@ -14,6 +14,11 @@ namespace MOBA.ErrorHandling
     public static class ErrorHandler {
     // Thread safety lock for error logging and statistics
     private static readonly object errorLock = new object();
+    // Rate limiting and batching for log file writes
+    private static readonly List<ErrorLog> logBuffer = new List<ErrorLog>();
+    private static DateTime lastFlushTime = DateTime.MinValue;
+    private static float flushIntervalSeconds = 1.0f; // Flush every 1 second
+    private static int maxLogsPerFlush = 10; // Max logs written per flush
         /// <summary>
         /// Cleans up static event subscriptions (call on application quit or domain reload).
         /// </summary>
@@ -38,12 +43,19 @@ namespace MOBA.ErrorHandling
         // Error counts for monitoring
         private static Dictionary<ErrorSeverity, int> errorCounts = new Dictionary<ErrorSeverity, int>();
         
-        public static event Action<ErrorLog> OnErrorLogged;
-        public static event Action<ErrorSeverity> OnErrorThresholdExceeded;
+    /// <summary>
+    /// Raised when an error is logged. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public static event Action<ErrorLog> OnErrorLogged;
+    /// <summary>
+    /// Raised when an error threshold is exceeded. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public static event Action<ErrorSeverity> OnErrorThresholdExceeded;
         
         static ErrorHandler()
         {
             Initialize();
+            OnErrorThresholdExceeded += DefaultEscalationOrRecovery;
         }
         
         public static void Initialize()
@@ -60,7 +72,13 @@ namespace MOBA.ErrorHandling
             
             // Set up Unity log callback
             Application.logMessageReceived += OnUnityLogMessage;
-            
+
+            // Start periodic flush (Unity update not available in static, so use timer)
+            System.Timers.Timer flushTimer = new System.Timers.Timer(flushIntervalSeconds * 1000f);
+            flushTimer.Elapsed += (s, e) => FlushLogBuffer();
+            flushTimer.AutoReset = true;
+            flushTimer.Start();
+
             isInitialized = true;
             LogInfo("ErrorHandler", "Error handling system initialized");
         }
@@ -112,10 +130,13 @@ namespace MOBA.ErrorHandling
 
                 // Update counts
                 errorCounts[severity]++;
+
+                // Add to log buffer for batching
+                logBuffer.Add(errorLog);
             }
 
-            // Write to file
-            WriteToLogFile(errorLog);
+            // Try to flush if needed
+            TryFlushLogBuffer();
 
             // Trigger events
             OnErrorLogged?.Invoke(errorLog);
@@ -277,22 +298,55 @@ namespace MOBA.ErrorHandling
             }
         }
         
-        private static void WriteToLogFile(ErrorLog errorLog)
+        // Write a batch of error logs to file (rate limited)
+        private static void WriteToLogFileBatch(List<ErrorLog> logs)
         {
             try
             {
-                string logLine = $"[{errorLog.Timestamp:yyyy-MM-dd HH:mm:ss}] [{errorLog.Severity}] [{errorLog.Context}] {errorLog.Message}";
-                if (errorLog.Exception != null)
+                if (logs == null || logs.Count == 0) return;
+                var lines = new System.Text.StringBuilder();
+                foreach (var errorLog in logs)
                 {
-                    logLine += $"\nException: {errorLog.Exception}";
+                    string logLine = $"[{errorLog.Timestamp:yyyy-MM-dd HH:mm:ss}] [{errorLog.Severity}] [{errorLog.Context}] {errorLog.Message}";
+                    if (errorLog.Exception != null)
+                    {
+                        logLine += $"\nException: {errorLog.Exception}";
+                    }
+                    logLine += "\n";
+                    lines.Append(logLine);
                 }
-                logLine += "\n";
-                
-                File.AppendAllText(logFilePath, logLine);
+                File.AppendAllText(logFilePath, lines.ToString());
             }
             catch (Exception e)
             {
                 UnityEngine.Debug.LogError($"[ErrorHandler] Failed to write to log file: {e.Message}");
+            }
+        }
+
+        // Try to flush log buffer if interval has passed or buffer is large
+        private static void TryFlushLogBuffer()
+        {
+            lock (errorLock)
+            {
+                var now = DateTime.Now;
+                if ((now - lastFlushTime).TotalSeconds >= flushIntervalSeconds || logBuffer.Count >= maxLogsPerFlush)
+                {
+                    FlushLogBuffer();
+                }
+            }
+        }
+
+        // Flushes the log buffer to disk (rate limited)
+        private static void FlushLogBuffer()
+        {
+            lock (errorLock)
+            {
+                if (logBuffer.Count == 0) return;
+                int countToWrite = Math.Min(logBuffer.Count, maxLogsPerFlush);
+                var logsToWrite = logBuffer.Take(countToWrite).ToList();
+                logBuffer.RemoveRange(0, countToWrite);
+                WriteToLogFileBatch(logsToWrite);
+                lastFlushTime = DateTime.Now;
             }
         }
         
@@ -335,6 +389,30 @@ namespace MOBA.ErrorHandling
             }
             
             return "Unknown";
+        }
+        
+        // Default escalation/recovery for critical error thresholds
+        private static void DefaultEscalationOrRecovery(ErrorSeverity severity)
+        {
+            string context = "ErrorHandler";
+            if (severity == ErrorSeverity.Critical)
+            {
+                LogInfo(context, "Critical error threshold exceeded. Attempting default recovery action.");
+                // Example: Attempt to save state, notify user, or restart subsystem
+                AttemptRecovery(context, () => {
+                    // Insert custom recovery logic here (e.g., reload scene, reset network, etc.)
+                    UnityEngine.Debug.LogWarning("[ErrorHandler] Default recovery: No custom action defined.");
+                }, "Default critical error recovery");
+            }
+            else if (severity == ErrorSeverity.Error)
+            {
+                LogInfo(context, "Error threshold exceeded. Escalating to admin or logging for review.");
+                // Example: Send alert, log to server, etc.
+            }
+            else if (severity == ErrorSeverity.Warning)
+            {
+                LogInfo(context, "Warning threshold exceeded. Monitoring for further issues.");
+            }
         }
         
         #endregion

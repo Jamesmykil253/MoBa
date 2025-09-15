@@ -6,13 +6,12 @@ namespace MOBA
 {
     /// <summary>
     /// Simple player controller - updated with modern Unity 6000+ Input System
-    /// Now uses configuration system instead of hardcoded values
+    /// Uses standardized config access via MasterConfig.Instance.playerConfig
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
     public class SimplePlayerController : MonoBehaviour, IDamageable
     {
-        [Header("Config Reference")]
-        [SerializeField] private MOBA.Configuration.PlayerConfig playerConfig;
+    // Access PlayerConfig via MasterConfig.Instance.playerConfig
         private bool isInvulnerable = false;
         // Slope and platform detection
         private Vector3 groundNormal = Vector3.up;
@@ -20,18 +19,39 @@ namespace MOBA
         [Header("Combat Cooldown")]
         [SerializeField] private float attackCooldown = 0.5f;
         private float lastAttackTime = -999f;
-        [Header("Player Stats")]
-        public float maxHealth = 100f;
-        public float currentHealth = 100f;
-        public int playerId;
+    [Header("Player Stats")]
+    /// <summary>
+    /// Maximum health for the player.
+    /// </summary>
+    public float maxHealth = 100f;
+    /// <summary>
+    /// Current health for the player.
+    /// </summary>
+    public float currentHealth = 100f;
+    /// <summary>
+    /// Unique player identifier.
+    /// </summary>
+    public int playerId;
 
-        [Header("Movement")]
-        public float moveSpeed = 8f;
-        public float jumpForce = 8f;
+    [Header("Movement")]
+    /// <summary>
+    /// Movement speed of the player.
+    /// </summary>
+    public float moveSpeed = 8f;
+    /// <summary>
+    /// Jump force applied to the player.
+    /// </summary>
+    public float jumpForce = 8f;
 
-        [Header("Combat")]
-        public float damage = 25f;
-        public float attackRange = 5f;
+    [Header("Combat")]
+    /// <summary>
+    /// Damage dealt by the player.
+    /// </summary>
+    public float damage = 25f;
+    /// <summary>
+    /// Attack range for the player.
+    /// </summary>
+    public float attackRange = 5f;
 
         [Header("Input System")]
         [SerializeField] private InputActionAsset inputActions;
@@ -52,9 +72,15 @@ namespace MOBA
         private InputAction jumpAction;
         private InputAction attackAction;
 
-        // Events
-        public System.Action<float> OnHealthChanged;
-        public System.Action OnDeath;
+    // Events
+    /// <summary>
+    /// Raised when health changes. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action<float> OnHealthChanged;
+    /// <summary>
+    /// Raised when the player dies. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action OnDeath;
 
         void Awake()
         {
@@ -257,6 +283,9 @@ namespace MOBA
         }
 
         public void TakeDamage(float damageAmount)
+    /// <summary>
+    /// Applies damage to the player. Triggers OnHealthChanged and OnDeath if health reaches zero.
+    /// </summary>
         {
             if (isInvulnerable) return;
             currentHealth -= damageAmount;
@@ -268,11 +297,17 @@ namespace MOBA
         }
 
         public float GetHealth()
+    /// <summary>
+    /// Returns the current health value.
+    /// </summary>
         {
             return currentHealth;
         }
 
         public bool IsDead()
+    /// <summary>
+    /// Returns true if the player is dead (health &lt;= 0).
+    /// </summary>
         {
             return currentHealth <= 0;
         }
@@ -289,10 +324,13 @@ namespace MOBA
         {
             // Optionally disable input or visuals here
             gameObject.SetActive(false);
-            yield return new WaitForSeconds(playerConfig != null ? playerConfig.respawnDelay : 3f);
+            var config = MOBA.Configuration.MasterConfig.Instance.playerConfig;
+            float delay = config != null ? config.respawnDelay : 3f;
+            Vector3 respawnPos = config != null ? config.respawnPosition : Vector3.zero;
+            yield return new WaitForSeconds(delay);
             // Respawn
             currentHealth = maxHealth;
-            transform.position = playerConfig != null ? playerConfig.respawnPosition : Vector3.zero;
+            transform.position = respawnPos;
             gameObject.SetActive(true);
             StartCoroutine(InvulnerabilityCoroutine(2f)); // 2 seconds of invulnerability
         }

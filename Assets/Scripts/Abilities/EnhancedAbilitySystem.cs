@@ -12,6 +12,8 @@ namespace MOBA.Abilities
     /// </summary>
     public class EnhancedAbilitySystem : MonoBehaviour
     {
+        // Static buffer for non-alloc overlap sphere
+        private static Collider[] overlapBuffer = new Collider[32];
         [Header("Abilities")]
         [SerializeField] private EnhancedAbility[] abilities = new EnhancedAbility[4];
         
@@ -39,11 +41,23 @@ namespace MOBA.Abilities
         // Stats modifiers
         private float currentCooldownReduction = 0f;
         
-        // Events
-        public System.Action<int> OnAbilityCast; // ability index
-        public System.Action<float, float> OnManaChanged; // current, max
-        public System.Action<int, float> OnCooldownUpdate; // ability index, remaining time
-        public System.Action<bool> OnCombatStateChanged; // in combat
+    // Events
+    /// <summary>
+    /// Raised when an ability is cast. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action<int> OnAbilityCast; // ability index
+    /// <summary>
+    /// Raised when mana changes. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action<float, float> OnManaChanged; // current, max
+    /// <summary>
+    /// Raised when an ability cooldown updates. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action<int, float> OnCooldownUpdate; // ability index, remaining time
+    /// <summary>
+    /// Raised when combat state changes. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action<bool> OnCombatStateChanged; // in combat
         
         // Properties
         public float CurrentMana => currentMana;
@@ -211,10 +225,21 @@ namespace MOBA.Abilities
         
         public bool TryCastAbility(int abilityIndex)
         {
-            if (!CanCastAbility(abilityIndex)) return false;
-            
-            var ability = abilities[abilityIndex];
-            return StartCoroutine(CastAbilityCoroutine(abilityIndex, ability)) != null;
+            if (!CanCastAbility(abilityIndex))
+            {
+                if (abilityIndex >= 0 && abilityIndex < abilities.Length && abilities[abilityIndex] != null)
+                {
+                    var ability = abilities[abilityIndex];
+                    if (!HasMana(ability.manaCost))
+                    {
+                        Debug.LogWarning($"[EnhancedAbilitySystem] Not enough mana to cast '{ability.abilityName}'. Required: {ability.manaCost}, Current: {currentMana}");
+                        // Optionally, trigger a UI event or sound here
+                    }
+                }
+                return false;
+            }
+            var ab = abilities[abilityIndex];
+            return StartCoroutine(CastAbilityCoroutine(abilityIndex, ab)) != null;
         }
         
         public bool CanCastAbility(int abilityIndex)
@@ -247,6 +272,7 @@ namespace MOBA.Abilities
             // Consume mana
             if (!ConsumeMana(ability.manaCost))
             {
+                Debug.LogWarning($"[EnhancedAbilitySystem] Failed to consume mana for '{ability.abilityName}'. Cast aborted.");
                 abilityLocked[abilityIndex] = false;
                 yield break;
             }
@@ -281,11 +307,11 @@ namespace MOBA.Abilities
         private void ExecuteAbilityEffect(int abilityIndex, EnhancedAbility ability)
         {
             // Apply damage to enemies in range
-            Collider[] targets = Physics.OverlapSphere(transform.position, ability.range);
+            int numTargets = Physics.OverlapSphereNonAlloc(transform.position, ability.range, overlapBuffer);
             int hitCount = 0;
-            
-            foreach (var target in targets)
+            for (int i = 0; i < numTargets; i++)
             {
+                var target = overlapBuffer[i];
                 if (target.CompareTag("Enemy") && target != this.GetComponent<Collider>())
                 {
                     var damageable = target.GetComponent<IDamageable>();
@@ -293,11 +319,8 @@ namespace MOBA.Abilities
                     {
                         damageable.TakeDamage(ability.damage);
                         hitCount++;
-                        
                         // Create hit effect
                         CreateHitEffect(target.transform.position);
-                        
-                        // Break if we hit max targets
                         if (hitCount >= ability.maxTargets)
                             break;
                     }
@@ -381,14 +404,66 @@ namespace MOBA.Abilities
         
         public EnhancedAbility GetAbility(int abilityIndex)
         {
-            if (abilityIndex < 0 || abilityIndex >= abilities.Length) return null;
+            if (abilityIndex < 0 || abilityIndex >= abilities.Length)
+            {
+                Debug.LogWarning($"[EnhancedAbilitySystem] GetAbility: Invalid index {abilityIndex}.");
+                return null;
+            }
             return abilities[abilityIndex];
         }
-        
+
         public void SetAbility(int abilityIndex, EnhancedAbility ability)
         {
-            if (abilityIndex < 0 || abilityIndex >= abilities.Length) return;
+            if (abilityIndex < 0)
+            {
+                Debug.LogWarning($"[EnhancedAbilitySystem] SetAbility: Negative index {abilityIndex}.");
+                return;
+            }
+            // Dynamically resize array if needed
+            if (abilityIndex >= abilities.Length)
+            {
+                int oldLen = abilities.Length;
+                System.Array.Resize(ref abilities, abilityIndex + 1);
+                for (int i = oldLen; i < abilities.Length; i++)
+                {
+                    abilities[i] = null;
+                    cooldowns[i] = 0f;
+                    abilityLocked[i] = false;
+                }
+            }
             abilities[abilityIndex] = ability;
+        }
+
+        public void RemoveAbility(int abilityIndex)
+        {
+            if (abilityIndex < 0 || abilityIndex >= abilities.Length)
+            {
+                Debug.LogWarning($"[EnhancedAbilitySystem] RemoveAbility: Invalid index {abilityIndex}.");
+                return;
+            }
+            abilities[abilityIndex] = null;
+            cooldowns[abilityIndex] = 0f;
+            abilityLocked[abilityIndex] = false;
+        }
+
+        public int AddAbility(EnhancedAbility ability)
+        {
+            // Find first empty slot or expand
+            for (int i = 0; i < abilities.Length; i++)
+            {
+                if (abilities[i] == null)
+                {
+                    abilities[i] = ability;
+                    return i;
+                }
+            }
+            // Expand array
+            int newIndex = abilities.Length;
+            System.Array.Resize(ref abilities, newIndex + 1);
+            abilities[newIndex] = ability;
+            cooldowns[newIndex] = 0f;
+            abilityLocked[newIndex] = false;
+            return newIndex;
         }
         
         public void ResetAllCooldowns()
@@ -430,6 +505,18 @@ namespace MOBA.Abilities
             }
         }
         
+        #endregion
+
+        #region External Combat Triggers
+
+        /// <summary>
+        /// Allows external systems (e.g., being attacked) to force the player into combat state.
+        /// </summary>
+        public void ForceEnterCombat()
+        {
+            EnterCombat();
+        }
+
         #endregion
     }
     

@@ -1,10 +1,24 @@
 using UnityEngine;
-// ...existing code...
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using System.Collections.Generic;
 using System.Collections;
 using MOBA;
+
+// Error codes for network errors
+public enum NetworkErrorCode
+{
+    None = 0,
+    Unknown = 1,
+    StartHostFailed = 2,
+    StartServerFailed = 3,
+    StartClientFailed = 4,
+    DuplicateConnection = 5,
+    MaxReconnectionAttempts = 6,
+    RapidReconnect = 7,
+    HighPing = 8,
+    NetworkManagerNull = 9
+}
 
 namespace MOBA.Networking
 {
@@ -14,28 +28,27 @@ namespace MOBA.Networking
     /// </summary>
     public class ProductionNetworkManager : MonoBehaviour
     {
+        private NetworkErrorCode lastErrorCode = NetworkErrorCode.None;
+        private string lastErrorMessage = string.Empty;
+        // Edge case: rapid connect/disconnect cooldown
+        private float lastDisconnectTime = -10f;
+        [SerializeField] private float reconnectCooldown = 2f; // seconds
         [Header("Network Configuration")]
         [SerializeField] private string serverIP = "127.0.0.1";
         [SerializeField] private ushort serverPort = 7777;
         [SerializeField] private int maxConnections = 10;
-    // ...existing code...
-        
         [Header("Game Settings")]
         [SerializeField] private bool autoStartAsHost = false;
         [SerializeField] private bool enableReconnection = true;
         [SerializeField] private float reconnectionInterval = 5f;
         [SerializeField] private int maxReconnectionAttempts = 3;
-        
         [Header("Anti-Cheat")]
         [SerializeField] private bool enableServerValidation = true;
         [SerializeField] private float maxAllowedPing = 500f;
-    // ...existing code...
-        
         [Header("Debug")]
         [SerializeField] private bool showDebugUI = true;
         [SerializeField] private bool logNetworkEvents = true;
         [SerializeField] private bool showNetworkStats = false;
-        
         // Network state tracking
         private NetworkConnectionState connectionState = NetworkConnectionState.Disconnected;
         private float lastPingTime = 0f;
@@ -50,12 +63,27 @@ namespace MOBA.Networking
         // Network statistics
         private NetworkStats networkStats = new NetworkStats();
         
-        // Events
-        public System.Action<NetworkConnectionState> OnConnectionStateChanged;
-        public System.Action<ulong> OnPlayerConnected;
-        public System.Action<ulong> OnPlayerDisconnected;
-        public System.Action<float> OnPingUpdated;
-        public System.Action<string> OnNetworkError;
+    // Events
+    /// <summary>
+    /// Raised when the connection state changes. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action<NetworkConnectionState> OnConnectionStateChanged;
+    /// <summary>
+    /// Raised when a player connects. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action<ulong> OnPlayerConnected;
+    /// <summary>
+    /// Raised when a player disconnects. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action<ulong> OnPlayerDisconnected;
+    /// <summary>
+    /// Raised when ping is updated. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action<float> OnPingUpdated;
+    /// <summary>
+    /// Raised when a network error occurs. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action<string> OnNetworkError;
         
         #region Unity Lifecycle
         
@@ -183,9 +211,15 @@ namespace MOBA.Networking
         public void StartClient()
         {
             if (NetworkManager.Singleton == null) return;
-            
+            // Prevent rapid reconnects
+            if (Time.time - lastDisconnectTime < reconnectCooldown)
+            {
+                HandleConnectionWarning($"Reconnect attempted too quickly. Please wait {reconnectCooldown - (Time.time - lastDisconnectTime):F1}s.");
+                return;
+            }
+
             SetConnectionState(NetworkConnectionState.Connecting);
-            
+
             bool success = NetworkManager.Singleton.StartClient();
             if (!success)
             {
@@ -216,6 +250,9 @@ namespace MOBA.Networking
             connectedPlayers.Clear();
             currentPlayerCount = 0;
             networkStats = new NetworkStats();
+
+            // Mark disconnect time for cooldown
+            lastDisconnectTime = Time.time;
 
             if (NetworkManager.Singleton != null)
             {
@@ -251,21 +288,28 @@ namespace MOBA.Networking
         
         private void OnClientConnected(ulong clientId)
         {
+            // Edge case: duplicate connection
+            if (connectedPlayers.ContainsKey(clientId))
+            {
+                HandleConnectionWarning($"Duplicate connection detected for client {clientId}. Rejecting duplicate.");
+                return;
+            }
+
             var playerData = new PlayerNetworkData
             {
                 ClientId = clientId,
                 ConnectedTime = Time.time,
                 IsActive = true
             };
-            
+
             connectedPlayers[clientId] = playerData;
             currentPlayerCount = connectedPlayers.Count;
-            
+
             OnPlayerConnected?.Invoke(clientId);
-            
+
             if (logNetworkEvents)
                 Debug.Log($"[ProductionNetworkManager] Player {clientId} connected. Total players: {currentPlayerCount}");
-                
+
             // Publish network event
             if (NetworkManager.Singleton.IsServer)
             {
@@ -284,7 +328,7 @@ namespace MOBA.Networking
                 
                 if (logNetworkEvents)
                     Debug.Log($"[ProductionNetworkManager] Player {clientId} disconnected. Total players: {currentPlayerCount}");
-                    
+                        
                 // Publish network event
                 if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
                 {
@@ -302,6 +346,19 @@ namespace MOBA.Networking
         #endregion
         
         #region Reconnection System
+
+        private System.Collections.IEnumerator ReconnectionCoroutine()
+        {
+            reconnectionAttempts++;
+            SetConnectionState(NetworkConnectionState.Reconnecting);
+
+            if (logNetworkEvents)
+                Debug.Log($"[ProductionNetworkManager] Attempting reconnection {reconnectionAttempts}/{maxReconnectionAttempts}");
+
+            yield return new WaitForSeconds(reconnectionInterval);
+
+            StartClient();
+        }
         
         private void ScheduleReconnection()
         {
@@ -394,11 +451,25 @@ namespace MOBA.Networking
         
         private void HandleConnectionError(string error)
         {
+            // Map error string to error code
+            NetworkErrorCode code = NetworkErrorCode.Unknown;
+            if (error.Contains("host")) code = NetworkErrorCode.StartHostFailed;
+            else if (error.Contains("server")) code = NetworkErrorCode.StartServerFailed;
+            else if (error.Contains("client")) code = NetworkErrorCode.StartClientFailed;
+            else if (error.Contains("duplicate")) code = NetworkErrorCode.DuplicateConnection;
+            else if (error.Contains("Max reconnection attempts")) code = NetworkErrorCode.MaxReconnectionAttempts;
+            else if (error.Contains("Reconnect attempted too quickly")) code = NetworkErrorCode.RapidReconnect;
+            else if (error.Contains("High ping")) code = NetworkErrorCode.HighPing;
+            else if (error.Contains("NetworkManager.Singleton is null")) code = NetworkErrorCode.NetworkManagerNull;
+
+            lastErrorCode = code;
+            lastErrorMessage = error;
+
             SetConnectionState(NetworkConnectionState.Error);
-            OnNetworkError?.Invoke(error);
-            
+            OnNetworkError?.Invoke($"[{code}] {error}");
+
             if (logNetworkEvents)
-                Debug.LogError($"[ProductionNetworkManager] {error}");
+                Debug.LogError($"[ProductionNetworkManager] [{code}] {error}");
         }
         
         private void HandleConnectionWarning(string warning)
@@ -477,7 +548,7 @@ namespace MOBA.Networking
                 GUILayout.Label($"Reconnection attempts: {reconnectionAttempts}/{maxReconnectionAttempts}");
             }
 
-            // Show error message if max reconnection attempts reached or in error state
+            // Show error code and user message if error
             if (connectionState == NetworkConnectionState.Error ||
                 (connectionState == NetworkConnectionState.Disconnected && reconnectionAttempts >= maxReconnectionAttempts))
             {
@@ -485,11 +556,8 @@ namespace MOBA.Networking
                 errorStyle.normal.textColor = Color.red;
                 errorStyle.fontStyle = FontStyle.Bold;
                 GUILayout.Space(10);
-                GUILayout.Label($"Connection failed. Please check your network and try again.", errorStyle);
-                if (reconnectionAttempts >= maxReconnectionAttempts)
-                {
-                    GUILayout.Label($"Max reconnection attempts reached.", errorStyle);
-                }
+                string userMessage = GetUserFriendlyErrorMessage(lastErrorCode, lastErrorMessage);
+                GUILayout.Label($"Error [{lastErrorCode}]: {userMessage}", errorStyle);
             }
 
             GUILayout.Space(10);
@@ -519,6 +587,32 @@ namespace MOBA.Networking
             GUILayout.EndArea();
         }
         
+        private string GetUserFriendlyErrorMessage(NetworkErrorCode code, string details)
+        {
+            switch (code)
+            {
+                case NetworkErrorCode.StartHostFailed:
+                    return "Failed to start as host. Please check your network settings.";
+                case NetworkErrorCode.StartServerFailed:
+                    return "Failed to start as server. Please check your network settings.";
+                case NetworkErrorCode.StartClientFailed:
+                    return "Failed to connect as client. Server may be unavailable.";
+                case NetworkErrorCode.DuplicateConnection:
+                    return "Duplicate connection detected. Please restart the client.";
+                case NetworkErrorCode.MaxReconnectionAttempts:
+                    return "Maximum reconnection attempts reached. Please check your connection.";
+                case NetworkErrorCode.RapidReconnect:
+                    return "You are reconnecting too quickly. Please wait a moment.";
+                case NetworkErrorCode.HighPing:
+                    return "High ping detected. Network may be unstable.";
+                case NetworkErrorCode.NetworkManagerNull:
+                    return "NetworkManager is not initialized. Restart the game.";
+                case NetworkErrorCode.Unknown:
+                default:
+                    return !string.IsNullOrEmpty(details) ? details : "An unknown network error occurred.";
+            }
+        }
+
         #endregion
     }
     
