@@ -31,6 +31,7 @@ namespace MOBA.ErrorHandling
         private static int maxErrorHistory = 1000;
         private static string logFilePath;
         private static bool isInitialized = false;
+        private static bool isHandlingUnityLogMessage = false;
         
         // Error thresholds
         private static readonly Dictionary<ErrorSeverity, int> errorThresholds = new Dictionary<ErrorSeverity, int>
@@ -281,20 +282,42 @@ namespace MOBA.ErrorHandling
         
         private static void OnUnityLogMessage(string logString, string stackTrace, LogType type)
         {
-            ErrorSeverity severity = LogType.Error switch
+            if (isHandlingUnityLogMessage)
             {
-                LogType.Error => ErrorSeverity.Error,
-                LogType.Exception => ErrorSeverity.Critical,
-                LogType.Warning => ErrorSeverity.Warning,
-                LogType.Log => ErrorSeverity.Info,
-                LogType.Assert => ErrorSeverity.Error,
-                _ => ErrorSeverity.Info
-            };
-            
-            // Only log if it's not already logged by our system
-            if (!logString.StartsWith("[ErrorHandler]"))
+                return;
+            }
+
+            if (string.IsNullOrEmpty(logString) || logString.StartsWith("[ErrorHandler]"))
             {
-                UnityEngine.Debug.LogError(logString);
+                return;
+            }
+
+            isHandlingUnityLogMessage = true;
+            try
+            {
+                string context = "UnityLog";
+                string message = string.IsNullOrEmpty(stackTrace) ? logString : $"{logString}\n{stackTrace}";
+
+                switch (type)
+                {
+                    case LogType.Warning:
+                        LogWarning(context, message);
+                        break;
+                    case LogType.Error:
+                    case LogType.Assert:
+                        LogError(context, message);
+                        break;
+                    case LogType.Exception:
+                        LogCritical(context, message);
+                        break;
+                    default:
+                        // Ignore regular info logs to avoid noise
+                        break;
+                }
+            }
+            finally
+            {
+                isHandlingUnityLogMessage = false;
             }
         }
         

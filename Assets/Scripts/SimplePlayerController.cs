@@ -1,6 +1,9 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using MOBA.Networking;
+using System.Collections.Generic;
+using MOBA.Configuration;
+using MOBA.Abilities;
 
 namespace MOBA
 {
@@ -64,13 +67,20 @@ namespace MOBA
         // Components
         private Rigidbody rb;
         private Collider playerCollider;
+        private Renderer[] cachedRenderers;
+        private Dictionary<Renderer, bool> rendererDefaultStates;
         private Vector3 moveInput;
         private bool isGrounded;
+        private bool canControl = true;
+        private bool isAlive = true;
 
         // Input Actions
         private InputAction moveAction;
         private InputAction jumpAction;
         private InputAction attackAction;
+
+        private PlayerConfig runtimePlayerConfig;
+        private EnhancedAbilitySystem abilitySystem;
 
     // Events
     /// <summary>
@@ -87,6 +97,7 @@ namespace MOBA
             // Cache component references for performance - modern Unity best practice
             rb = GetComponent<Rigidbody>();
             playerCollider = GetComponent<Collider>();
+            abilitySystem = GetComponent<EnhancedAbilitySystem>();
             
             // Validate required components
             if (rb == null)
@@ -121,24 +132,48 @@ namespace MOBA
                 jumpAction = inputActions.FindAction("Jump");
                 attackAction = inputActions.FindAction("Attack");
             }
+
+            cachedRenderers = GetComponentsInChildren<Renderer>(true);
+            rendererDefaultStates = new Dictionary<Renderer, bool>(cachedRenderers.Length);
+            foreach (var renderer in cachedRenderers)
+            {
+                if (renderer != null && !rendererDefaultStates.ContainsKey(renderer))
+                {
+                    rendererDefaultStates[renderer] = renderer.enabled;
+                }
+            }
+
+            var masterConfig = MasterConfig.Instance;
+            runtimePlayerConfig = masterConfig != null ? masterConfig.playerConfig : null;
+            ApplyPlayerConfig();
         }
 
         void Start()
         {
             currentHealth = maxHealth;
+            canControl = true;
+            isAlive = true;
+            abilitySystem?.SetInputEnabled(true);
             
             // Enable input actions if available
-            if (moveAction != null) moveAction.Enable();
-            if (jumpAction != null) jumpAction.Enable();
-            if (attackAction != null) attackAction.Enable();
+            if (isAlive && canControl)
+            {
+                moveAction?.Enable();
+                jumpAction?.Enable();
+                attackAction?.Enable();
+            }
         }
 
         void OnEnable()
         {
             // Enable actions when object becomes active
-            moveAction?.Enable();
-            jumpAction?.Enable();
-            attackAction?.Enable();
+            if (isAlive && canControl)
+            {
+                moveAction?.Enable();
+                jumpAction?.Enable();
+                attackAction?.Enable();
+                abilitySystem?.SetInputEnabled(true);
+            }
         }
 
         void OnDisable()
@@ -147,6 +182,7 @@ namespace MOBA
             moveAction?.Disable();
             jumpAction?.Disable();
             attackAction?.Disable();
+            abilitySystem?.SetInputEnabled(false);
         }
 
         void OnDestroy()
@@ -166,6 +202,7 @@ namespace MOBA
 
         void Update()
         {
+            if (!canControl || !isAlive) return;
             HandleInput();
         }
 
@@ -173,6 +210,7 @@ namespace MOBA
         {
             // Use FixedUpdate for physics-based movement
             CheckGrounded();
+            if (!canControl || !isAlive) return;
             Move();
         }
 
@@ -216,6 +254,7 @@ namespace MOBA
 
         void HandleInput()
         {
+            if (!canControl) return;
             // Modern Input System approach only
             if (moveAction != null)
             {
@@ -243,12 +282,13 @@ namespace MOBA
 
             // Calculate movement direction relative to world space
             Vector3 movement = moveInput.normalized * moveSpeed;
-            
+
             // Preserve Y velocity for gravity and jumping
-            Vector3 targetVelocity = new Vector3(movement.x, rb.linearVelocity.y, movement.z);
-            
+            Vector3 currentVelocity = rb.velocity;
+            Vector3 targetVelocity = new Vector3(movement.x, currentVelocity.y, movement.z);
+
             // Apply movement using physics system for proper collision detection
-            rb.linearVelocity = targetVelocity;
+            rb.velocity = targetVelocity;
         }
 
         void Jump()
@@ -258,6 +298,7 @@ namespace MOBA
 
         void Attack()
         {
+            if (!canControl || !isAlive) return;
             // Attack cooldown check
             if (Time.time < lastAttackTime + attackCooldown)
                 return;
@@ -314,7 +355,11 @@ namespace MOBA
 
         void Die()
         {
-
+            if (!canControl || !isAlive)
+                return;
+            canControl = false;
+            isAlive = false;
+            abilitySystem?.SetInputEnabled(false);
             OnDeath?.Invoke();
             // Start respawn coroutine
             StartCoroutine(RespawnCoroutine());
@@ -323,15 +368,17 @@ namespace MOBA
         private System.Collections.IEnumerator RespawnCoroutine()
         {
             // Optionally disable input or visuals here
-            gameObject.SetActive(false);
-            var config = MOBA.Configuration.MasterConfig.Instance.playerConfig;
+            SetPlayerActiveState(false);
+            var config = runtimePlayerConfig ?? (MasterConfig.Instance != null ? MasterConfig.Instance.playerConfig : null);
             float delay = config != null ? config.respawnDelay : 3f;
             Vector3 respawnPos = config != null ? config.respawnPosition : Vector3.zero;
             yield return new WaitForSeconds(delay);
             // Respawn
             currentHealth = maxHealth;
             transform.position = respawnPos;
-            gameObject.SetActive(true);
+            isAlive = true;
+            canControl = true;
+            SetPlayerActiveState(true);
             StartCoroutine(InvulnerabilityCoroutine(2f)); // 2 seconds of invulnerability
         }
 
@@ -355,6 +402,76 @@ namespace MOBA
                 Gizmos.color = isGrounded ? Color.green : Color.yellow;
                 Gizmos.DrawWireSphere(groundCheckPoint.position, groundCheckDistance);
             }
+        }
+
+        private void SetPlayerActiveState(bool active)
+        {
+            if (!active)
+            {
+                canControl = false;
+            }
+            if (rb != null)
+            {
+                if (!active)
+                {
+                    rb.velocity = Vector3.zero;
+                }
+                rb.isKinematic = !active;
+            }
+
+            if (playerCollider != null)
+            {
+                playerCollider.enabled = active;
+            }
+
+            if (cachedRenderers != null)
+            {
+                foreach (var renderer in cachedRenderers)
+                {
+                    if (renderer == null) continue;
+                    if (rendererDefaultStates != null && rendererDefaultStates.TryGetValue(renderer, out var defaultState))
+                    {
+                        renderer.enabled = active ? defaultState : false;
+                    }
+                    else
+                    {
+                        renderer.enabled = active;
+                    }
+                }
+            }
+
+            if (!active)
+            {
+                moveInput = Vector3.zero;
+                if (moveAction != null) moveAction.Disable();
+                if (jumpAction != null) jumpAction.Disable();
+                if (attackAction != null) attackAction.Disable();
+            }
+            else
+            {
+                if (isAlive && canControl)
+                {
+                    moveAction?.Enable();
+                    jumpAction?.Enable();
+                    attackAction?.Enable();
+                }
+            }
+
+            abilitySystem?.SetInputEnabled(active && isAlive && canControl);
+        }
+
+        private void ApplyPlayerConfig()
+        {
+            if (runtimePlayerConfig == null) return;
+
+            maxHealth = runtimePlayerConfig.maxHealth;
+            currentHealth = Mathf.Clamp(currentHealth, 0f, maxHealth);
+            moveSpeed = runtimePlayerConfig.moveSpeed;
+            jumpForce = runtimePlayerConfig.jumpForce;
+            damage = runtimePlayerConfig.damage;
+            attackRange = runtimePlayerConfig.attackRange;
+            groundCheckDistance = runtimePlayerConfig.groundCheckDistance;
+            groundLayerMask = runtimePlayerConfig.groundLayerMask;
         }
     }
 }

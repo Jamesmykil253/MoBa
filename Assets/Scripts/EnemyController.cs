@@ -41,6 +41,7 @@ namespace MOBA
 
         // State tracking
         private bool isDead;
+        private bool isInitialized;
 
         private void Awake()
         {
@@ -53,6 +54,10 @@ namespace MOBA
         /// </summary>
         public void ManualInitialize()
         {
+            if (isInitialized)
+            {
+                return;
+            }
             // Get required components
             rb = GetComponent<Rigidbody>();
             col = GetComponent<Collider>();
@@ -68,6 +73,7 @@ namespace MOBA
             currentHealth = maxHealth;
             originalPosition = transform.position;
             isDead = false;
+            isInitialized = true;
 
             // Set enemy color
             if (meshRenderer != null && meshRenderer.material != null)
@@ -80,7 +86,7 @@ namespace MOBA
 
         private void Update()
         {
-            if (isDead) return;
+            if (!isInitialized || isDead) return;
 
             // Find targets
             FindTarget();
@@ -148,9 +154,12 @@ namespace MOBA
 
             // Use faster speed when chasing
             float currentSpeed = isChasing ? moveSpeed * 1.2f : moveSpeed;
-            
+
             // FIXED: Remove Time.deltaTime from velocity calculation - velocity is already per-second
-            rb.linearVelocity = new Vector3(direction.x * currentSpeed, rb.linearVelocity.y, direction.z * currentSpeed);
+            Vector3 currentVelocity = rb.velocity;
+            currentVelocity.x = direction.x * currentSpeed;
+            currentVelocity.z = direction.z * currentSpeed;
+            rb.velocity = currentVelocity;
 
             // Look at target
             transform.LookAt(new Vector3(target.position.x, transform.position.y, target.position.z));
@@ -169,13 +178,19 @@ namespace MOBA
                 // Use slower speed when returning (not chasing)
                 float returnSpeed = isChasing ? moveSpeed : moveSpeed * 0.5f;
                 // FIXED: Remove Time.deltaTime from velocity calculation
-                rb.linearVelocity = new Vector3(direction.x * returnSpeed, rb.linearVelocity.y, direction.z * returnSpeed);
+                Vector3 currentVelocity = rb.velocity;
+                currentVelocity.x = direction.x * returnSpeed;
+                currentVelocity.z = direction.z * returnSpeed;
+                rb.velocity = currentVelocity;
             }
             else
             {
                 // Stop moving when close to origin
                 isChasing = false;
-                rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
+                Vector3 currentVelocity = rb.velocity;
+                currentVelocity.x = 0f;
+                currentVelocity.z = 0f;
+                rb.velocity = currentVelocity;
             }
         }
 
@@ -239,6 +254,7 @@ namespace MOBA
 
         public void TakeDamage(float damage)
         {
+            if (!isInitialized) return;
             if (isDead) return;
 
             currentHealth -= damage;
@@ -280,7 +296,7 @@ namespace MOBA
             Debug.Log("[EnemyController] Enemy died!");
 
             // Stop movement
-            rb.linearVelocity = Vector3.zero;
+            rb.velocity = Vector3.zero;
 
             // Create death effect
             CreateDeathEffect();
@@ -323,6 +339,10 @@ namespace MOBA
 
         public void Respawn()
         {
+            if (!isInitialized)
+            {
+                ManualInitialize();
+            }
             // Reset enemy state
             isDead = false;
             currentHealth = maxHealth;

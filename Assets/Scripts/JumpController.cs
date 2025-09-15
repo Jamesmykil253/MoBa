@@ -112,9 +112,9 @@ namespace MOBA
         private void PerformJump(float force)
         {
             // Preserve horizontal velocity, set vertical velocity
-            Vector3 velocity = rigidBody.linearVelocity;
+            Vector3 velocity = rigidBody.velocity;
             velocity.y = force;
-            rigidBody.linearVelocity = velocity;
+            rigidBody.velocity = velocity;
         }
 
         // Public read-only properties for state inspection

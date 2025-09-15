@@ -63,6 +63,8 @@ namespace MOBA
             SpawnPlayers();
             SpawnEnemies();
 
+            InitializeEnemiesInScene();
+
             Debug.Log("Game Started!");
         }
         // --- Validation for spawns and prefabs ---
@@ -143,8 +145,26 @@ namespace MOBA
             {
                 if (enemyPrefab != null && enemySpawnPoints[i] != null)
                 {
-                    Instantiate(enemyPrefab, enemySpawnPoints[i].position, enemySpawnPoints[i].rotation);
+                    var enemyObj = Instantiate(enemyPrefab, enemySpawnPoints[i].position, enemySpawnPoints[i].rotation);
+                    var enemyController = enemyObj.GetComponent<EnemyController>();
+                    if (enemyController != null)
+                    {
+                        enemyController.ManualInitialize();
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[SimpleGameManager] Spawned enemy prefab {enemyPrefab.name} is missing EnemyController component.");
+                    }
                 }
+            }
+        }
+
+        private void InitializeEnemiesInScene()
+        {
+            var enemies = FindObjectsByType<EnemyController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (var enemy in enemies)
+            {
+                enemy.ManualInitialize();
             }
         }
         

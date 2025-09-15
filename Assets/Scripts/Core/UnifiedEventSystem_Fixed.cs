@@ -17,20 +17,28 @@ namespace MOBA
 		private readonly string methodName;
 		private readonly Type eventType;
 		private readonly Delegate originalDelegate;
+		private readonly bool isStatic;
 		public WeakEventHandler(Delegate handler, Type eventType)
 		{
-			this.targetRef = new WeakReference(handler.Target);
+			isStatic = handler.Target == null;
+			if (!isStatic)
+			{
+				targetRef = new WeakReference(handler.Target);
+			}
 			this.methodName = handler.Method.Name;
 			this.eventType = eventType;
 			this.originalDelegate = handler;
 		}
-		public bool IsAlive => targetRef.IsAlive;
+		public bool IsAlive => isStatic || (targetRef != null && targetRef.IsAlive);
 		public Delegate OriginalDelegate => originalDelegate;
 		public bool TryInvoke(object arg)
 		{
 			if (!IsAlive) return false;
-			var target = targetRef.Target;
-			if (target == null) return false;
+			if (!isStatic)
+			{
+				var target = targetRef.Target;
+				if (target == null) return false;
+			}
 			originalDelegate.DynamicInvoke(arg);
 			return true;
 		}
@@ -466,7 +474,6 @@ namespace MOBA
 		public float range;
 	}
 }
-
 
 
 

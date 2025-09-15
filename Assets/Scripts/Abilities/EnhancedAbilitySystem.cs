@@ -1,5 +1,5 @@
 using UnityEngine;
-// ...existing code...
+using UnityEngine.InputSystem;
 using System.Collections.Generic;
 using System.Collections;
 using MOBA;
@@ -27,19 +27,31 @@ namespace MOBA.Abilities
         [SerializeField] private float globalCooldown = 0.1f;
         [SerializeField] private bool enableCooldownReduction = true;
         [SerializeField] private float maxCooldownReduction = 0.4f; // 40% max CDR
-        
+
         [Header("Combat State")]
         [SerializeField] private float combatDuration = 5f; // Time to stay in combat after last action
-        
+
+        [Header("Input System")]
+        [SerializeField] private InputActionAsset inputActions;
+        [SerializeField] private string[] abilityActionNames = new[] { "Ability1", "Ability2", "Ability3", "Ability4" };
+
         // Runtime state
         private float lastCastTime;
         private float lastCombatTime;
         private bool isInCombat = false;
         private Dictionary<int, float> cooldowns = new Dictionary<int, float>();
         private Dictionary<int, bool> abilityLocked = new Dictionary<int, bool>(); // For channeling/casting
-        
+
         // Stats modifiers
         private float currentCooldownReduction = 0f;
+
+        // Input state
+        private InputAction[] abilityInputActions;
+        private System.Action<InputAction.CallbackContext>[] abilityActionHandlers;
+        private bool[] actionAvailable;
+        private bool hasInputActions;
+        private bool inputActionsInitialized;
+        private bool inputEnabled = true;
         
     // Events
     /// <summary>
@@ -68,6 +80,16 @@ namespace MOBA.Abilities
         
         #region Unity Lifecycle
         
+        void Awake()
+        {
+            InitializeInputActions();
+        }
+
+        void OnEnable()
+        {
+            ApplyInputActionState(inputEnabled);
+        }
+
         void Start()
         {
             // Initialize cooldowns and locks
@@ -89,8 +111,14 @@ namespace MOBA.Abilities
             HandleInput();
         }
         
+        void OnDisable()
+        {
+            ApplyInputActionState(false);
+        }
+
         void OnDestroy()
         {
+            CleanupInputActions();
             // Clean up events
             OnAbilityCast = null;
             OnManaChanged = null;
@@ -212,11 +240,22 @@ namespace MOBA.Abilities
         
         private void HandleInput()
         {
-            // Q, W, E, R for abilities
-            if (Input.GetKeyDown(KeyCode.Q)) TryCastAbility(0);
-            if (Input.GetKeyDown(KeyCode.W)) TryCastAbility(1);
-            if (Input.GetKeyDown(KeyCode.E)) TryCastAbility(2);
-            if (Input.GetKeyDown(KeyCode.R)) TryCastAbility(3);
+            if (!inputEnabled)
+            {
+                return;
+            }
+
+            bool HasAction(int index)
+            {
+                if (actionAvailable == null || index < 0 || index >= actionAvailable.Length)
+                    return false;
+                return actionAvailable[index];
+            }
+
+            if (!HasAction(0) && Input.GetKeyDown(KeyCode.Q)) TryCastAbility(0);
+            if (!HasAction(1) && Input.GetKeyDown(KeyCode.W)) TryCastAbility(1);
+            if (!HasAction(2) && Input.GetKeyDown(KeyCode.E)) TryCastAbility(2);
+            if (!HasAction(3) && Input.GetKeyDown(KeyCode.R)) TryCastAbility(3);
         }
         
         #endregion
@@ -474,7 +513,7 @@ namespace MOBA.Abilities
                 OnCooldownUpdate?.Invoke(i, 0f);
             }
         }
-        
+
         public void SetMaxMana(float newMaxMana)
         {
             float percentage = ManaPercentage;
@@ -482,9 +521,16 @@ namespace MOBA.Abilities
             currentMana = maxMana * percentage;
             OnManaChanged?.Invoke(currentMana, maxMana);
         }
-        
+
+        public void SetInputEnabled(bool enabled)
+        {
+            inputEnabled = enabled;
+            if (!isActiveAndEnabled) return;
+            ApplyInputActionState(enabled);
+        }
+
         #endregion
-        
+
         #region Debug
         
         void OnGUI()
@@ -505,6 +551,129 @@ namespace MOBA.Abilities
             }
         }
         
+        #endregion
+
+        #region Input Integration
+
+        private void InitializeInputActions()
+        {
+            if (inputActionsInitialized)
+            {
+                return;
+            }
+
+            if (abilities == null)
+            {
+                abilities = new EnhancedAbility[4];
+            }
+
+            if (abilityActionNames == null || abilityActionNames.Length == 0)
+            {
+                abilityActionNames = new[] { "Ability1", "Ability2", "Ability3", "Ability4" };
+            }
+
+            if (inputActions == null)
+            {
+                var playerInput = GetComponentInParent<PlayerInput>();
+                if (playerInput != null)
+                {
+                    inputActions = playerInput.actions;
+                }
+            }
+
+            int abilityCount = abilities.Length;
+            abilityInputActions = new InputAction[abilityCount];
+            abilityActionHandlers = new System.Action<InputAction.CallbackContext>[abilityCount];
+            actionAvailable = new bool[abilityCount];
+
+            if (inputActions != null)
+            {
+                int mappedCount = Mathf.Min(abilityActionNames.Length, abilityCount);
+                for (int i = 0; i < mappedCount; i++)
+                {
+                    string actionName = abilityActionNames[i];
+                    if (string.IsNullOrEmpty(actionName))
+                    {
+                        continue;
+                    }
+
+                    var action = inputActions.FindAction(actionName, throwIfNotFound: false);
+                    if (action == null)
+                    {
+                        Debug.LogWarning($"[EnhancedAbilitySystem] Input action '{actionName}' not found in provided InputActionAsset.");
+                        continue;
+                    }
+
+                    abilityInputActions[i] = action;
+                    int abilityIndex = i;
+                    abilityActionHandlers[i] = ctx =>
+                    {
+                        if (!inputEnabled || !isActiveAndEnabled)
+                        {
+                            return;
+                        }
+                        TryCastAbility(abilityIndex);
+                    };
+                    action.performed += abilityActionHandlers[i];
+                    actionAvailable[i] = true;
+                    hasInputActions = true;
+                }
+            }
+
+            inputActionsInitialized = true;
+        }
+
+        private void ApplyInputActionState(bool enable)
+        {
+            if (!hasInputActions || abilityInputActions == null)
+            {
+                return;
+            }
+
+            foreach (var action in abilityInputActions)
+            {
+                if (action == null) continue;
+                if (enable)
+                {
+                    if (!action.enabled)
+                    {
+                        action.Enable();
+                    }
+                }
+                else if (action.enabled)
+                {
+                    action.Disable();
+                }
+            }
+        }
+
+        private void CleanupInputActions()
+        {
+            if (!hasInputActions || abilityInputActions == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < abilityInputActions.Length; i++)
+            {
+                if (abilityInputActions[i] == null || abilityActionHandlers == null)
+                {
+                    continue;
+                }
+
+                if (abilityActionHandlers.Length > i && abilityActionHandlers[i] != null)
+                {
+                    abilityInputActions[i].performed -= abilityActionHandlers[i];
+                }
+                if (actionAvailable != null && i < actionAvailable.Length)
+                {
+                    actionAvailable[i] = false;
+                }
+            }
+
+            hasInputActions = false;
+        }
+
         #endregion
 
         #region External Combat Triggers

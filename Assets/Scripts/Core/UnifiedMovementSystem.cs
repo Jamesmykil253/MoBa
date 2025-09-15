@@ -297,7 +297,7 @@ namespace MOBA
                 // Reset to last valid position
                 Debug.LogWarning("[UnifiedMovementSystem] Invalid position detected, resetting to last valid position");
                 transform.position = lastValidPosition;
-                rigidbody.linearVelocity = Vector3.zero;
+                rigidbody.velocity = Vector3.zero;
             }
         }
 
