@@ -23,7 +23,7 @@ namespace MOBA
         [SerializeField] private int initialPoolSize = 20;
         [SerializeField] private Transform poolParent;
 
-        private ComponentPool<Projectile> projectilePool;
+        private UnifiedObjectPool.ComponentPool<Projectile> projectilePool;
 
         private GameDebugContext BuildContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.General)
         {
@@ -58,7 +58,12 @@ namespace MOBA
             var projectileComponent = projectilePrefab.GetComponent<Projectile>();
             if (projectileComponent != null)
             {
-                projectilePool = UnifiedObjectPool.GetComponentPool<Projectile>("ProjectilePool", projectileComponent, initialPoolSize, 100);
+                projectilePool = UnifiedObjectPool.GetComponentPool<Projectile>(
+                    $"ProjectilePool_{GetInstanceID()}",
+                    projectileComponent,
+                    initialPoolSize,
+                    Mathf.Max(initialPoolSize, 100),
+                    poolParent != null ? poolParent : transform);
                 if (projectilePool != null)
                 {
                     GameDebug.Log(BuildContext(GameDebugMechanicTag.Initialization),
@@ -199,10 +204,14 @@ namespace MOBA
         /// </summary>
         public void ReturnAllProjectiles()
         {
-            // UnifiedObjectPool doesn't have ReturnAll method, 
-            // but we could implement it or just clear the specific pool
-            GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Recovery),
-                "ReturnAll not implemented in UnifiedObjectPool; manual cleanup required.");
+            if (projectilePool == null)
+            {
+                return;
+            }
+
+            projectilePool.ReturnAll();
+            GameDebug.Log(BuildContext(GameDebugMechanicTag.Pooling),
+                "All active projectiles returned to pool.");
         }
 
     }

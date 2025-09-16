@@ -1,15 +1,28 @@
-using UnityEngine;
-using UnityEngine.InputSystem;
 using System.Collections.Generic;
+using UnityEngine;
+using MOBA.Abilities;
 using MOBA.Debugging;
 
 namespace MOBA
 {
     /// <summary>
-    /// Simple ability system with basic cooldowns
+    /// Legacy façade that now delegates to <see cref="EnhancedAbilitySystem"/>.
+    /// Keeps existing prefabs functional while unifying all runtime logic.
     /// </summary>
+    [DisallowMultipleComponent]
+    [RequireComponent(typeof(EnhancedAbilitySystem))]
     public class SimpleAbilitySystem : MonoBehaviour
     {
+        [Header("Legacy Ability Definitions")]
+        [Tooltip("Legacy ability assets are converted to runtime EnhancedAbility instances at startup.")]
+        [SerializeField] private SimpleAbility[] abilities = new SimpleAbility[4];
+        [SerializeField] private bool synchroniseOnAwake = true;
+
+        [Header("Bridged Enhanced System")]
+        [SerializeField] private EnhancedAbilitySystem enhancedSystem;
+
+        private readonly List<EnhancedAbility> runtimeAbilities = new List<EnhancedAbility>();
+
         private GameDebugContext BuildContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.General)
         {
             return new GameDebugContext(
@@ -19,220 +32,144 @@ namespace MOBA
                 subsystem: nameof(SimpleAbilitySystem),
                 actor: gameObject != null ? gameObject.name : null);
         }
-        [Header("Abilities")]
-        public SimpleAbility[] abilities = new SimpleAbility[4];
 
-        [Header("Input System")]
-        [SerializeField] private InputActionAsset inputActions;
-        [SerializeField] private string[] abilityActionNames = new[] { "Ability1", "Ability2", "Ability3", "Ability4" };
-
-        [Header("Settings")]
-        public float globalCooldown = 0.1f;
-
-        private float lastCastTime;
-        private Dictionary<int, float> cooldowns = new Dictionary<int, float>();
-        private InputAction[] abilityActions;
-        private System.Action<InputAction.CallbackContext>[] abilityCallbacks;
-        private bool inputInitialized;
-        private bool inputEnabled = true;
-
-        void Awake()
+        private void Awake()
         {
-            InitializeInput();
-        }
+            EnsureEnhancedSystem();
 
-        void OnEnable()
-        {
-            ApplyInputState(true);
-        }
-
-        void Start()
-        {
-            for (int i = 0; i < abilities.Length; i++)
+            if (synchroniseOnAwake)
             {
-                cooldowns[i] = 0f;
+                SynchroniseAbilities();
             }
         }
 
-        void Update()
+        private void OnDestroy()
         {
-            UpdateCooldowns();
-        }
-
-        void OnDisable()
-        {
-            ApplyInputState(false);
-        }
-
-        void OnDestroy()
-        {
-            CleanupInput();
-        }
-        
-        void UpdateCooldowns()
-        {
-            var keys = new List<int>(cooldowns.Keys);
-            foreach (var key in keys)
+            for (int i = runtimeAbilities.Count - 1; i >= 0; i--)
             {
-                if (cooldowns[key] > 0)
-                    cooldowns[key] -= Time.deltaTime;
-            }
-        }
-        
-        public void TryCastAbility(int abilityIndex)
-        {
-            if (abilityIndex < 0 || abilityIndex >= abilities.Length) return;
-            if (abilities[abilityIndex] == null) return;
-            
-            // Check global cooldown
-            if (Time.time - lastCastTime < globalCooldown) return;
-            
-            // Check ability cooldown
-            if (cooldowns[abilityIndex] > 0) return;
-            
-            // Cast ability
-            CastAbility(abilityIndex);
-        }
-        
-        void CastAbility(int abilityIndex)
-        {
-            var ability = abilities[abilityIndex];
-            
-            // Apply damage to nearby enemies
-            Collider[] enemies = Physics.OverlapSphere(transform.position, ability.range);
-            foreach (var enemy in enemies)
-            {
-                if (enemy.CompareTag("Enemy"))
+                if (runtimeAbilities[i] != null)
                 {
-                    var damageable = enemy.GetComponent<IDamageable>();
-                    damageable?.TakeDamage(ability.damage);
+                    Destroy(runtimeAbilities[i]);
                 }
             }
-            
-            // Set cooldowns
-            cooldowns[abilityIndex] = ability.cooldown;
-            lastCastTime = Time.time;
-            
-            GameDebug.Log(
-                BuildContext(GameDebugMechanicTag.AbilityUse),
-                "Ability cast executed.",
-                ("Ability", ability.abilityName),
-                ("Damage", ability.damage),
-                ("Range", ability.range));
-        }
-        
-        public bool IsAbilityReady(int abilityIndex)
-        {
-            if (abilityIndex < 0 || abilityIndex >= abilities.Length) return false;
-            return cooldowns[abilityIndex] <= 0;
-        }
-        
-        public float GetCooldownRemaining(int abilityIndex)
-        {
-            if (abilityIndex < 0 || abilityIndex >= abilities.Length) return 0f;
-            return Mathf.Max(0f, cooldowns[abilityIndex]);
+
+            runtimeAbilities.Clear();
         }
 
-        public void SetInputEnabled(bool enabled)
+        private void EnsureEnhancedSystem()
         {
-            inputEnabled = enabled;
-            if (!isActiveAndEnabled) return;
-            ApplyInputState(enabled);
+            if (enhancedSystem == null)
+            {
+                enhancedSystem = GetComponent<EnhancedAbilitySystem>();
+            }
+
+            if (enhancedSystem == null)
+            {
+                enhancedSystem = gameObject.AddComponent<EnhancedAbilitySystem>();
+            }
         }
 
-        private void InitializeInput()
+        /// <summary>
+        /// Converts legacy <see cref="SimpleAbility"/> assets into runtime <see cref="EnhancedAbility"/> instances.
+        /// Call this after modifying the abilities array at runtime.
+        /// </summary>
+        public void SynchroniseAbilities()
         {
-            if (inputInitialized)
+            EnsureEnhancedSystem();
+
+            if (abilities == null || enhancedSystem == null)
             {
                 return;
             }
 
-            if (abilities == null)
+            for (int i = runtimeAbilities.Count - 1; i >= 0; i--)
             {
-                abilities = new SimpleAbility[4];
-            }
-
-            if (abilityActionNames == null || abilityActionNames.Length == 0)
-            {
-                abilityActionNames = new[] { "Ability1", "Ability2", "Ability3", "Ability4" };
-            }
-
-            if (inputActions == null)
-            {
-                var playerInput = GetComponentInParent<PlayerInput>();
-                if (playerInput != null)
+                if (runtimeAbilities[i] != null)
                 {
-                    inputActions = playerInput.actions;
+                    Destroy(runtimeAbilities[i]);
                 }
             }
+            runtimeAbilities.Clear();
 
-            int count = abilities.Length;
-            abilityActions = new InputAction[count];
-            abilityCallbacks = new System.Action<InputAction.CallbackContext>[count];
-
-            if (inputActions != null)
+            for (int i = 0; i < abilities.Length; i++)
             {
-                int mapped = Mathf.Min(count, abilityActionNames.Length);
-                for (int i = 0; i < mapped; i++)
+                var simpleAbility = abilities[i];
+                EnhancedAbility runtimeAbility = null;
+
+                if (simpleAbility != null)
                 {
-                    string actionName = abilityActionNames[i];
-                    if (string.IsNullOrEmpty(actionName))
-                    {
-                        continue;
-                    }
+                    runtimeAbility = ScriptableObject.CreateInstance<EnhancedAbility>();
+                    runtimeAbility.hideFlags = HideFlags.HideAndDontSave;
+                    runtimeAbility.abilityName = simpleAbility.abilityName;
+                    runtimeAbility.description = simpleAbility.description;
+                    runtimeAbility.icon = simpleAbility.icon;
+                    runtimeAbility.damage = simpleAbility.damage;
+                    runtimeAbility.range = simpleAbility.range;
+                    runtimeAbility.cooldown = simpleAbility.cooldown;
+                    runtimeAbility.manaCost = 0f; // Legacy abilities were free by default
+                    runtimeAbility.castTime = 0f;
+                    runtimeAbility.maxTargets = 5;
+                    runtimeAbility.effectColor = Color.white;
+                    runtimeAbility.enableParticleEffect = false;
+                    runtimeAbility.abilityType = ConvertAbilityType(simpleAbility.abilityType);
+                    runtimeAbility.targetType = MOBA.Abilities.TargetType.Enemy;
 
-                    var action = inputActions.FindAction(actionName, throwIfNotFound: false);
-                    if (action == null)
-                    {
-                        GameDebug.LogWarning(
-                            BuildContext(GameDebugMechanicTag.Input),
-                            "Input action not found for ability binding.",
-                            ("Action", actionName));
-                        continue;
-                    }
-
-                    abilityActions[i] = action;
-                    int abilityIndex = i;
-                    abilityCallbacks[i] = ctx =>
-                    {
-                        if (!inputEnabled || !isActiveAndEnabled) return;
-                        TryCastAbility(abilityIndex);
-                    };
-                    action.performed += abilityCallbacks[i];
+                    runtimeAbilities.Add(runtimeAbility);
                 }
+                else
+                {
+                    runtimeAbilities.Add(null);
+                }
+
+                enhancedSystem.SetAbility(i, runtimeAbility);
             }
 
-            inputInitialized = true;
+            GameDebug.Log(BuildContext(GameDebugMechanicTag.Configuration),
+                "Synchronised legacy abilities into EnhancedAbilitySystem.",
+                ("AbilityCount", abilities.Length));
         }
 
-        private void ApplyInputState(bool enable)
-        {
-            if (abilityActions == null) return;
+        #region Legacy API Forwarders
 
-            foreach (var action in abilityActions)
-            {
-                if (action == null) continue;
-                if (enable)
-                {
-                    if (!action.enabled) action.Enable();
-                }
-                else if (action.enabled)
-                {
-                    action.Disable();
-                }
-            }
+        public bool TryCastAbility(int abilityIndex)
+        {
+            EnsureEnhancedSystem();
+            return enhancedSystem != null && enhancedSystem.TryCastAbility(abilityIndex);
         }
 
-        private void CleanupInput()
+        public bool IsAbilityReady(int abilityIndex)
         {
-            if (abilityActions == null || abilityCallbacks == null) return;
+            EnsureEnhancedSystem();
+            return enhancedSystem != null && enhancedSystem.IsAbilityReady(abilityIndex);
+        }
 
-            for (int i = 0; i < abilityActions.Length; i++)
+        public float GetCooldownRemaining(int abilityIndex)
+        {
+            EnsureEnhancedSystem();
+            return enhancedSystem != null ? enhancedSystem.GetCooldownRemaining(abilityIndex) : 0f;
+        }
+
+        public void SetInputEnabled(bool enabled)
+        {
+            EnsureEnhancedSystem();
+            enhancedSystem?.SetInputEnabled(enabled);
+        }
+
+        public EnhancedAbilitySystem GetEnhancedSystem() => enhancedSystem;
+
+        #endregion
+
+        private static MOBA.Abilities.AbilityType ConvertAbilityType(AbilityType type)
+        {
+            switch (type)
             {
-                if (abilityActions[i] != null && abilityCallbacks[i] != null)
-                {
-                    abilityActions[i].performed -= abilityCallbacks[i];
-                }
+                case AbilityType.PrimaryAttack:
+                case AbilityType.Ability1:
+                case AbilityType.Ability2:
+                case AbilityType.Ultimate:
+                    return MOBA.Abilities.AbilityType.Instant;
+                default:
+                    return MOBA.Abilities.AbilityType.Instant;
             }
         }
     }

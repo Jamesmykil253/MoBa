@@ -1,6 +1,7 @@
 using UnityEngine;
 using MOBA.Networking;
 using MOBA.Debugging;
+using MOBA.Effects;
 
 namespace MOBA
 {
@@ -305,22 +306,7 @@ namespace MOBA
             // Different effect color based on state
             Color effectColor = isChasing ? Color.red : new Color(1f, 0.5f, 0f); // Red when chasing, orange when not
             
-            // Simple attack effect - colored sphere
-            GameObject attackEffect = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            attackEffect.transform.position = transform.position + transform.forward * 1.5f;
-            attackEffect.transform.localScale = Vector3.one * 0.5f;
-            
-            var renderer = attackEffect.GetComponent<Renderer>();
-            if (renderer != null)
-            {
-                renderer.material.color = effectColor;
-            }
-
-            // Remove collider so it doesn't interfere
-            Destroy(attackEffect.GetComponent<Collider>());
-            
-            // Destroy effect after short time
-            Destroy(attackEffect, 0.3f);
+            EffectPoolService.SpawnSphereEffect(transform.position + transform.forward * 1.5f, effectColor, 0.5f, 0.4f, transform.root);
         }
 
         public void TakeDamage(float damage)
@@ -416,28 +402,7 @@ namespace MOBA
 
         private void CreateDeathEffect()
         {
-            // Create explosion-like effect
-            for (int i = 0; i < 5; i++)
-            {
-                GameObject particle = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                particle.transform.position = transform.position + Random.insideUnitSphere * 2f;
-                particle.transform.localScale = Vector3.one * 0.2f;
-                
-                var renderer = particle.GetComponent<Renderer>();
-                if (renderer != null)
-                {
-                    renderer.material.color = Color.yellow;
-                }
-
-                // Add some physics
-                var particleRb = particle.GetComponent<Rigidbody>();
-                if (particleRb != null)
-                {
-                    particleRb.AddForce(Random.insideUnitSphere * 300f);
-                }
-
-                Destroy(particle, 3f);
-            }
+            EffectPoolService.SpawnSphereBurst(transform.position, Color.yellow, 2f, 8, 2f, 0.25f, transform.root);
         }
 
         private void DisableEnemy()

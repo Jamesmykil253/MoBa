@@ -1,23 +1,35 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using MOBA.Abilities;
 
 namespace MOBA
 {
     /// <summary>
-    /// Bridges Input System actions to <see cref="SimpleAbilitySystem"/> casts.
+    /// Bridges Input System actions to ability casts.
     /// </summary>
     public class SimpleInputHandler : MonoBehaviour
     {
-        [SerializeField] private SimpleAbilitySystem abilitySystem;
+        [SerializeField] private EnhancedAbilitySystem enhancedAbilitySystem;
+        [SerializeField] private SimpleAbilitySystem legacyAbilitySystem;
         [SerializeField] private InputActionReference[] abilityActions = new InputActionReference[4];
 
         private System.Action<InputAction.CallbackContext>[] actionHandlers;
 
         private void Awake()
         {
-            if (abilitySystem == null)
+            if (enhancedAbilitySystem == null)
             {
-                abilitySystem = GetComponent<SimpleAbilitySystem>();
+                enhancedAbilitySystem = GetComponent<EnhancedAbilitySystem>();
+            }
+
+            if (enhancedAbilitySystem == null && legacyAbilitySystem == null)
+            {
+                legacyAbilitySystem = GetComponent<SimpleAbilitySystem>();
+            }
+
+            if (enhancedAbilitySystem == null && legacyAbilitySystem != null)
+            {
+                enhancedAbilitySystem = legacyAbilitySystem.GetEnhancedSystem();
             }
         }
 
@@ -40,7 +52,17 @@ namespace MOBA
                 if (actionHandlers[i] == null)
                 {
                     int abilityIndex = i;
-                    actionHandlers[i] = ctx => abilitySystem?.TryCastAbility(abilityIndex);
+                    actionHandlers[i] = ctx =>
+                    {
+                        if (enhancedAbilitySystem != null)
+                        {
+                            enhancedAbilitySystem.TryCastAbility(abilityIndex);
+                        }
+                        else
+                        {
+                            legacyAbilitySystem?.TryCastAbility(abilityIndex);
+                        }
+                    };
                 }
 
                 action.performed += actionHandlers[i];

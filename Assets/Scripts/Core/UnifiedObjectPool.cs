@@ -20,7 +20,7 @@ namespace MOBA
         /// <summary>
         /// Create or get a component-based object pool
         /// </summary>
-        public static ComponentPool<T> GetComponentPool<T>(string poolName, T prefab, int initialSize = 10, int maxSize = 100) 
+        public static ComponentPool<T> GetComponentPool<T>(string poolName, T prefab, int initialSize = 10, int maxSize = 100, Transform parent = null) 
             where T : Component
         {
             lock (lockObject)
@@ -35,7 +35,7 @@ namespace MOBA
                     return null;
                 }
 
-                var newPool = new ComponentPool<T>(prefab, initialSize, maxSize);
+                var newPool = new ComponentPool<T>(prefab, initialSize, maxSize, parent);
                 pools[poolName] = newPool;
                 Debug.Log($"[UnifiedObjectPool] Created ComponentPool<{typeof(T).Name}> '{poolName}' (Initial: {initialSize}, Max: {maxSize})");
                 return newPool;
@@ -45,7 +45,7 @@ namespace MOBA
         /// <summary>
         /// Create or get a GameObject-based object pool
         /// </summary>
-        public static GameObjectPool GetGameObjectPool(string poolName, GameObject prefab, int initialSize = 10, int maxSize = 100)
+        public static GameObjectPool GetGameObjectPool(string poolName, GameObject prefab, int initialSize = 10, int maxSize = 100, Transform parent = null)
         {
             lock (lockObject)
             {
@@ -59,7 +59,7 @@ namespace MOBA
                     return null;
                 }
 
-                var newPool = new GameObjectPool(prefab, initialSize, maxSize);
+                var newPool = new GameObjectPool(prefab, initialSize, maxSize, parent);
                 pools[poolName] = newPool;
                 Debug.Log($"[UnifiedObjectPool] Created GameObjectPool '{poolName}' (Initial: {initialSize}, Max: {maxSize})");
                 return newPool;
@@ -69,7 +69,7 @@ namespace MOBA
         /// <summary>
         /// Create or get a NetworkObject-based object pool
         /// </summary>
-        public static NetworkObjectPool GetNetworkObjectPool(string poolName, GameObject prefab, int initialSize = 10, int maxSize = 100)
+        public static NetworkObjectPool GetNetworkObjectPool(string poolName, GameObject prefab, int initialSize = 10, int maxSize = 100, Transform parent = null)
         {
             lock (lockObject)
             {
@@ -83,7 +83,7 @@ namespace MOBA
                     return null;
                 }
 
-                var newPool = new NetworkObjectPool(prefab, initialSize, maxSize);
+                var newPool = new NetworkObjectPool(prefab, initialSize, maxSize, parent);
                 pools[poolName] = newPool;
                 Debug.Log($"[UnifiedObjectPool] Created NetworkObjectPool '{poolName}' (Initial: {initialSize}, Max: {maxSize})");
                 return newPool;
@@ -137,32 +137,34 @@ namespace MOBA
                 Debug.Log("[UnifiedObjectPool] Cleared all pools");
             }
         }
-    }
 
-    /// <summary>
-    /// Base interface for all pool types
-    /// </summary>
-    public interface IObjectPool
-    {
-        (int available, int active, int total) GetStats();
-        void Clear();
-    }
+        /// <summary>
+        /// Base interface for all pool types
+        /// </summary>
+        public interface IObjectPool
+        {
+            (int available, int active, int total) GetStats();
+            void Clear();
+            void ReturnAll();
+        }
 
-    /// <summary>
-    /// Component-based object pool with proper lifecycle management
-    /// </summary>
-    public class ComponentPool<T> : IObjectPool, IDisposable where T : Component
-    {
+        /// <summary>
+        /// Component-based object pool with proper lifecycle management
+        /// </summary>
+        public class ComponentPool<T> : IObjectPool, IDisposable where T : Component
+        {
         private readonly Queue<T> availableObjects = new();
         private readonly List<T> allObjects = new();
         private readonly T prefab;
         private readonly int maxSize;
+        private readonly Transform parent;
         private bool disposed = false;
 
-        public ComponentPool(T prefab, int initialSize, int maxSize)
+        public ComponentPool(T prefab, int initialSize, int maxSize, Transform parent = null)
         {
             this.prefab = prefab;
             this.maxSize = maxSize;
+            this.parent = parent;
             
             // Pre-populate the pool
             for (int i = 0; i < initialSize; i++)
@@ -207,7 +209,9 @@ namespace MOBA
         {
             if (disposed || allObjects.Count >= maxSize) return null;
             
-            GameObject newObj = UnityEngine.Object.Instantiate(prefab.gameObject);
+            GameObject newObj = parent != null
+                ? UnityEngine.Object.Instantiate(prefab.gameObject, parent)
+                : UnityEngine.Object.Instantiate(prefab.gameObject);
             T component = newObj.GetComponent<T>();
             
             if (component == null)
@@ -240,6 +244,15 @@ namespace MOBA
             allObjects.Clear();
         }
 
+        public void ReturnAll()
+        {
+            foreach (var obj in allObjects)
+            {
+                if (obj == null) continue;
+                Return(obj);
+            }
+        }
+
         public void Dispose()
         {
             if (!disposed)
@@ -248,23 +261,25 @@ namespace MOBA
                 disposed = true;
             }
         }
-    }
+        }
 
-    /// <summary>
-    /// GameObject-based object pool for prefabs without specific component requirements
-    /// </summary>
-    public class GameObjectPool : IObjectPool
-    {
+        /// <summary>
+        /// GameObject-based object pool for prefabs without specific component requirements
+        /// </summary>
+        public class GameObjectPool : IObjectPool
+        {
         private readonly Queue<GameObject> availableObjects = new();
         private readonly List<GameObject> allObjects = new();
         private readonly GameObject prefab;
         private readonly int maxSize;
+        private readonly Transform parent;
 
-        public GameObjectPool(GameObject prefab, int initialSize, int maxSize)
+        public GameObjectPool(GameObject prefab, int initialSize, int maxSize, Transform parent = null)
         {
             this.prefab = prefab;
             this.maxSize = maxSize;
-            
+            this.parent = parent;
+
             // Pre-populate the pool
             for (int i = 0; i < initialSize; i++)
             {
@@ -306,7 +321,9 @@ namespace MOBA
         {
             if (allObjects.Count >= maxSize) return null;
             
-            GameObject newObj = UnityEngine.Object.Instantiate(prefab);
+            GameObject newObj = parent != null
+                ? UnityEngine.Object.Instantiate(prefab, parent)
+                : UnityEngine.Object.Instantiate(prefab);
             allObjects.Add(newObj);
             newObj.SetActive(false);
             return newObj;
@@ -329,24 +346,35 @@ namespace MOBA
             availableObjects.Clear();
             allObjects.Clear();
         }
-    }
 
-    /// <summary>
-    /// Network-aware object pool for multiplayer games
-    /// </summary>
-    public class NetworkObjectPool : IObjectPool
-    {
+        public void ReturnAll()
+        {
+            foreach (var obj in allObjects)
+            {
+                if (obj == null) continue;
+                Return(obj);
+            }
+        }
+        }
+
+        /// <summary>
+        /// Network-aware object pool for multiplayer games
+        /// </summary>
+        public class NetworkObjectPool : IObjectPool
+        {
         private readonly Queue<GameObject> availableObjects = new();
         private readonly List<GameObject> allObjects = new();
         private readonly GameObject prefab;
         private readonly int maxSize;
         private NetworkManager networkManager;
+        private readonly Transform parent;
 
-        public NetworkObjectPool(GameObject prefab, int initialSize, int maxSize)
+        public NetworkObjectPool(GameObject prefab, int initialSize, int maxSize, Transform parent = null)
         {
             this.prefab = prefab;
             this.maxSize = maxSize;
             networkManager = NetworkManager.Singleton;
+            this.parent = parent;
             
             // Pre-populate the pool
             for (int i = 0; i < initialSize; i++)
@@ -409,7 +437,9 @@ namespace MOBA
         {
             if (allObjects.Count >= maxSize) return null;
             
-            GameObject newObj = UnityEngine.Object.Instantiate(prefab);
+            GameObject newObj = parent != null
+                ? UnityEngine.Object.Instantiate(prefab, parent)
+                : UnityEngine.Object.Instantiate(prefab);
             allObjects.Add(newObj);
             newObj.SetActive(false);
             return newObj;
@@ -440,6 +470,16 @@ namespace MOBA
             }
             availableObjects.Clear();
             allObjects.Clear();
+        }
+
+        public void ReturnAll()
+        {
+            foreach (var obj in allObjects)
+            {
+                if (obj == null) continue;
+                Return(obj);
+            }
+        }
         }
     }
 }

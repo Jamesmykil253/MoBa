@@ -1,5 +1,6 @@
 using UnityEngine;
 using MOBA.Debugging;
+using MOBA.Abilities;
 
 namespace MOBA
 {
@@ -53,13 +54,24 @@ namespace MOBA
                     "Added CapsuleCollider component.");
             }
 
-            // Ensure SimpleAbilitySystem exists
-            if (playerObj.GetComponent<SimpleAbilitySystem>() == null)
+            // Ensure Enhanced ability stack exists
+            var enhanced = playerObj.GetComponent<EnhancedAbilitySystem>();
+            if (enhanced == null)
             {
-                playerObj.AddComponent<SimpleAbilitySystem>();
+                enhanced = playerObj.AddComponent<EnhancedAbilitySystem>();
                 GameDebug.Log(BuildContext(GameDebugMechanicTag.Initialization, playerObj.name),
-                    "Added SimpleAbilitySystem component.");
+                    "Added EnhancedAbilitySystem component.");
             }
+
+            var legacyAbility = playerObj.GetComponent<SimpleAbilitySystem>();
+            if (legacyAbility == null)
+            {
+                legacyAbility = playerObj.AddComponent<SimpleAbilitySystem>();
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Initialization, playerObj.name),
+                    "Added SimpleAbilitySystem facade component.");
+            }
+
+            legacyAbility.SynchroniseAbilities();
 
             GameDebug.Log(BuildContext(GameDebugMechanicTag.Initialization, playerObj.name),
                 "Player setup complete.");

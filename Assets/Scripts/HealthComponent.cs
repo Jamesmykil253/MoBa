@@ -1,5 +1,6 @@
 using UnityEngine;
 using MOBA.Debugging;
+using MOBA.Effects;
 
 namespace MOBA
 {
@@ -173,28 +174,7 @@ namespace MOBA
 
         private void CreateDeathEffect()
         {
-            // Simple particle effect
-            for (int i = 0; i < 3; i++)
-            {
-                GameObject particle = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                particle.transform.position = transform.position + Random.insideUnitSphere * 1f;
-                particle.transform.localScale = Vector3.one * 0.2f;
-                
-                var renderer = particle.GetComponent<Renderer>();
-                if (renderer != null)
-                {
-                    renderer.material.color = Color.yellow;
-                }
-
-                // Add physics
-                var rb = particle.GetComponent<Rigidbody>();
-                if (rb != null)
-                {
-                    rb.AddForce(Random.insideUnitSphere * 200f);
-                }
-
-                Destroy(particle, 2f);
-            }
+            EffectPoolService.SpawnSphereBurst(transform.position, Color.yellow, 1f, 6, 1.5f, 0.2f, transform.root);
         }
 
         private void OnDestroy()

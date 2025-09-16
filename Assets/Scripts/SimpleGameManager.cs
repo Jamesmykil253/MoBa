@@ -97,7 +97,11 @@ namespace MOBA
             teamScores[1] = 0;
             gameActive = true;
 
-            ValidateSpawnsAndPrefabs();
+            if (!ValidateSpawnsAndPrefabs())
+            {
+                gameActive = false;
+                return false;
+            }
 
             SpawnPlayers();
             SpawnEnemies();
@@ -109,28 +113,41 @@ namespace MOBA
             return true;
         }
         // --- Validation for spawns and prefabs ---
-        private void ValidateSpawnsAndPrefabs()
+        private bool ValidateSpawnsAndPrefabs()
         {
+            bool isValid = true;
             // Player prefab
             if (playerPrefab == null)
+            {
                 GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
                     "Player prefab is not assigned.");
+                isValid = false;
+            }
             // Enemy prefab
             if (enemyPrefab == null)
+            {
                 GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
                     "Enemy prefab is not assigned.");
+                isValid = false;
+            }
 
             // Player spawn points
             if (playerSpawnPoints == null || playerSpawnPoints.Length == 0)
+            {
                 GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
                     "No player spawn points assigned.");
+                isValid = false;
+            }
             else
             {
                 for (int i = 0; i < playerSpawnPoints.Length; i++)
                 {
                     if (playerSpawnPoints[i] == null)
+                    {
                         GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
                             $"Player spawn point {i} is null.");
+                        isValid = false;
+                    }
                 }
                 // Check for duplicate/overlapping positions
                 for (int i = 0; i < playerSpawnPoints.Length; i++)
@@ -153,15 +170,21 @@ namespace MOBA
 
             // Enemy spawn points
             if (enemySpawnPoints == null || enemySpawnPoints.Length == 0)
+            {
                 GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
                     "No enemy spawn points assigned.");
+                isValid = false;
+            }
             else
             {
                 for (int i = 0; i < enemySpawnPoints.Length; i++)
                 {
                     if (enemySpawnPoints[i] == null)
+                    {
                         GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
                             $"Enemy spawn point {i} is null.");
+                        isValid = false;
+                    }
                 }
                 // Check for duplicate/overlapping positions
                 for (int i = 0; i < enemySpawnPoints.Length; i++)
@@ -181,10 +204,16 @@ namespace MOBA
                     }
                 }
             }
-    }
+            return isValid;
+        }
         
         void SpawnPlayers()
         {
+            if (playerSpawnPoints == null || playerSpawnPoints.Length == 0 || playerPrefab == null)
+            {
+                return;
+            }
+
             int spawnLimit = spawnSingleLocalPlayer ? 1 : Mathf.Min(playerSpawnPoints.Length, maxPlayers);
             int spawned = 0;
 
@@ -200,6 +229,11 @@ namespace MOBA
         
         void SpawnEnemies()
         {
+            if (enemySpawnPoints == null || enemySpawnPoints.Length == 0 || enemyPrefab == null)
+            {
+                return;
+            }
+
             for (int i = 0; i < enemySpawnPoints.Length; i++)
             {
                 if (enemyPrefab != null && enemySpawnPoints[i] != null)

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Collections;
 using MOBA;
 using MOBA.Debugging;
+using MOBA.Effects;
 
 namespace MOBA.Abilities
 {
@@ -383,45 +384,20 @@ namespace MOBA.Abilities
             // Simple visual effect for ability casting
             if (ability.enableParticleEffect)
             {
-                // Create a simple particle burst
-                for (int i = 0; i < 5; i++)
-                {
-                    GameObject particle = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                    particle.transform.position = transform.position + Random.insideUnitSphere * ability.range * 0.5f;
-                    particle.transform.localScale = Vector3.one * 0.1f;
-                    
-                    var renderer = particle.GetComponent<Renderer>();
-                    if (renderer != null)
-                    {
-                        renderer.material.color = ability.effectColor;
-                    }
-                    
-                    // Add movement
-                    var rb = particle.GetComponent<Rigidbody>();
-                    if (rb != null)
-                    {
-                        rb.AddForce(Random.insideUnitSphere * 100f);
-                    }
-                    
-                    Destroy(particle, 1f);
-                }
+                EffectPoolService.SpawnSphereBurst(
+                    transform.position,
+                    ability.effectColor,
+                    ability.range * 0.5f,
+                    5,
+                    0.75f,
+                    0.1f,
+                    transform.root);
             }
         }
-        
+
         private void CreateHitEffect(Vector3 position)
         {
-            // Simple hit effect
-            GameObject hitEffect = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            hitEffect.transform.position = position;
-            hitEffect.transform.localScale = Vector3.one * 0.3f;
-            
-            var renderer = hitEffect.GetComponent<Renderer>();
-            if (renderer != null)
-            {
-                renderer.material.color = Color.red;
-            }
-            
-            Destroy(hitEffect, 0.5f);
+            EffectPoolService.SpawnSphereEffect(position, Color.red, 0.3f, 0.4f, transform.root);
         }
         
         #endregion

@@ -13,11 +13,8 @@ namespace MOBA
     /// <typeparam name="T">Type of object to pool, must be a Component</typeparam>
     public class ObjectPool<T> : IDisposable where T : Component
     {
-        private readonly Queue<T> availableObjects = new Queue<T>();
-        private readonly List<T> allObjects = new List<T>();
-        private readonly T prefab;
-        private readonly Transform parent;
-        private readonly int initialSize;
+        private readonly UnifiedObjectPool.ComponentPool<T> componentPool;
+        private readonly string poolName;
         private bool disposed = false;
 
         private GameDebugContext DebugContext => new GameDebugContext(
@@ -34,15 +31,14 @@ namespace MOBA
         /// <param name="parent">Parent transform for pooled objects</param>
         public ObjectPool(T prefab, int initialSize = 10, Transform parent = null)
         {
-            this.prefab = prefab;
-            this.initialSize = initialSize;
-            this.parent = parent;
-
-            // Pre-populate the pool
-            for (int i = 0; i < initialSize; i++)
+            if (prefab == null)
             {
-                CreateNewObject();
+                GameDebug.LogError(DebugContext, "Cannot create pool without a prefab instance.");
+                throw new ArgumentNullException(nameof(prefab));
             }
+
+            poolName = $"{typeof(T).Name}_{prefab.gameObject.GetInstanceID()}_{GetHashCode()}";
+            componentPool = UnifiedObjectPool.GetComponentPool(poolName, prefab, initialSize, Mathf.Max(initialSize * 4, initialSize + 10), parent);
         }
 
         /// <summary>
@@ -57,21 +53,7 @@ namespace MOBA
                 throw new ObjectDisposedException(nameof(ObjectPool<T>));
             }
             
-            T obj;
-            if (availableObjects.Count > 0)
-            {
-                obj = availableObjects.Dequeue();
-            }
-            else
-            {
-                obj = CreateNewObject();
-            }
-
-            if (obj != null)
-            {
-                obj.gameObject.SetActive(true);
-            }
-            return obj;
+            return componentPool.Get();
         }
 
         /// <summary>
@@ -87,32 +69,15 @@ namespace MOBA
                 GameDebug.LogError(DebugContext, "Cannot get object from disposed pool.");
                 return false;
             }
-
-            try
+            
+            obj = componentPool.Get();
+            if (obj == null)
             {
-                if (availableObjects.Count > 0)
-                {
-                    obj = availableObjects.Dequeue();
-                }
-                else
-                {
-                    obj = CreateNewObject();
-                }
-
-                if (obj == null)
-                {
-                    GameDebug.LogError(DebugContext, "Failed to create or retrieve pooled object instance.");
-                    return false;
-                }
-
-                obj.gameObject.SetActive(true);
-                return true;
-            }
-            catch (System.Exception ex)
-            {
-                GameDebug.LogException(ex, DebugContext);
+                GameDebug.LogError(DebugContext, "Failed to retrieve pooled object instance.");
                 return false;
             }
+
+            return true;
         }
 
         /// <summary>
@@ -123,11 +88,7 @@ namespace MOBA
         {
             if (disposed || obj == null) return;
 
-            obj.gameObject.SetActive(false);
-            if (!availableObjects.Contains(obj))
-            {
-                availableObjects.Enqueue(obj);
-            }
+            componentPool.Return(obj);
         }
 
         /// <summary>
@@ -135,80 +96,38 @@ namespace MOBA
         /// </summary>
         public void ReturnAll()
         {
-            foreach (var obj in allObjects)
+            if (disposed)
             {
-                if (obj.gameObject.activeSelf)
-                {
-                    Return(obj);
-                }
+                return;
             }
+
+            componentPool.ReturnAll();
         }
 
         /// <summary>
-        /// Creates a new object and adds it to the pool
-        /// </summary>
-        /// <returns>Newly created object</returns>
-        private T CreateNewObject()
-        {
-            if (disposed) return null;
-            
-            // Create new instance from the prefab
-            if (prefab == null)
-            {
-                GameDebug.LogError(DebugContext, "Prefab reference is null; cannot create new pooled object.");
-                return null;
-            }
-
-            GameObject newObj = UnityEngine.Object.Instantiate(prefab.gameObject, parent);
-            T component = newObj.GetComponent<T>();
-
-            if (component == null)
-            {
-                GameDebug.LogError(
-                    DebugContext,
-                    $"Prefab object {prefab.gameObject.name} missing required component {typeof(T).Name}.");
-                UnityEngine.Object.Destroy(newObj);
-                return null;
-            }
-
-            allObjects.Add(component);
-            return component;
-        }
-
-        /// <summary>
-        /// Dispose of all pooled objects and clear collections
+        /// Dispose of the pool and release pooled instances
         /// </summary>
         public void Dispose()
         {
             if (disposed) return;
-            
-            // Destroy all pooled objects
-            foreach (var obj in allObjects)
-            {
-                if (obj != null)
-                {
-                    UnityEngine.Object.Destroy(obj.gameObject);
-                }
-            }
-            
-            availableObjects.Clear();
-            allObjects.Clear();
+
+            UnifiedObjectPool.ClearPool(poolName);
             disposed = true;
         }
 
         /// <summary>
         /// Gets the total number of objects created
         /// </summary>
-        public int TotalCount => allObjects.Count;
+        public int TotalCount => componentPool?.GetStats().total ?? 0;
 
         /// <summary>
         /// Gets the number of available objects in the pool
         /// </summary>
-        public int AvailableCount => availableObjects.Count;
+        public int AvailableCount => componentPool?.GetStats().available ?? 0;
 
         /// <summary>
         /// Gets the number of active objects
         /// </summary>
-        public int ActiveCount => TotalCount - AvailableCount;
+        public int ActiveCount => componentPool?.GetStats().active ?? 0;
     }
 }

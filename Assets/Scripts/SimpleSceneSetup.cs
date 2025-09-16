@@ -1,6 +1,10 @@
 using UnityEngine;
+using Unity.Netcode;
+using Unity.Netcode.Transports.UTP;
+using UnityEngine.InputSystem;
 using MOBA.Networking;
 using MOBA.Debugging;
+using MOBA.Abilities;
 
 namespace MOBA
 {
@@ -44,6 +48,7 @@ namespace MOBA
             CreateGround();
             CreatePlayer();
             CreateGameManager();
+            CreateCamera();
             
             if (includeNetworking)
             {
@@ -94,21 +99,53 @@ namespace MOBA
                 player.name = "Player";
                 
                 // Add components
+                var rb = player.AddComponent<Rigidbody>();
+                rb.interpolation = RigidbodyInterpolation.Interpolate;
+
+                if (player.GetComponent<CapsuleCollider>() == null)
+                {
+                    player.AddComponent<CapsuleCollider>();
+                }
+
                 player.AddComponent<SimplePlayerController>();
-                player.AddComponent<SimpleAbilitySystem>();
-                player.AddComponent<Rigidbody>();
+
+                player.AddComponent<PlayerInput>();
+
+                player.AddComponent<EnhancedAbilitySystem>();
+                var simple = player.AddComponent<SimpleAbilitySystem>();
+                simple.SynchroniseAbilities();
+
+            }
+
+            if (player.GetComponent<SimpleInputHandler>() == null)
+            {
+                player.AddComponent<SimpleInputHandler>();
             }
         }
 
         void CreateGameManager()
         {
+            var existing = FindFirstObjectByType<SimpleGameManager>();
+            if (existing != null)
+            {
+                return;
+            }
+
             var gameManagerObj = new GameObject("Game Manager");
             gameManagerObj.AddComponent<SimpleGameManager>();
         }
 
         void CreateNetworkManager()
         {
+            var existing = FindFirstObjectByType<NetworkManager>();
+            if (existing != null)
+            {
+                return;
+            }
+
             var networkManagerObj = new GameObject("Network Manager");
+            networkManagerObj.AddComponent<NetworkManager>();
+            networkManagerObj.AddComponent<UnityTransport>();
             networkManagerObj.AddComponent<SimpleNetworkManager>();
         }
 

@@ -18,6 +18,7 @@ GameObject:
   - component: {fileID: 8452662444167271655}
   - component: {fileID: 6373726723703209727}
   - component: {fileID: -648450399738026430}
+  - component: {fileID: 1066243605481967322}
   m_Layer: 0
   m_Name: Player
   m_TagString: Player
@@ -155,23 +156,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d42f15e005d0a47cb8ad05ca7b555afa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  forwardSpeed: 7.5
+  movementSystem:
+    baseMoveSpeed: 8
+    jumpForce: 8
+    groundCheckDistance: 1.1
+    groundLayer:
+      serializedVersion: 2
+      m_Bits: 1
+    enableNetworkValidation: 1
+    maxMovementSpeed: 15
+    teleportThreshold: 20
+    maxInputMagnitude: 1.1
   rotationResponsiveness: 14
-  movementBlend: 12
-  gravityScale: 1.1
-  baseJumpHeight: 1
-  highJumpHeight: 1.5
-  doubleJumpHeight: 2
-  apexDoubleJumpHeight: 2.8
-  jumpHoldWindow: 0.18
-  apexVelocityTolerance: 0.35
-  coyoteTime: 0.12
-  jumpBufferTime: 0.1
-  groundProbe: {fileID: 0}
-  probeRadius: 0.3
-  groundLayers:
-    serializedVersion: 2
-    m_Bits: 8
   moveActionReference: {fileID: -1680190386980627800, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   jumpActionReference: {fileID: -2099379676528639254, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   fallbackMoveAction: Move
@@ -196,13 +192,8 @@ MonoBehaviour:
   - {fileID: 11400000, guid: c896aea1bedd644be9f536d921481562, type: 2}
   - {fileID: 11400000, guid: 962c38f1708f3456a9b3b363018e93b0, type: 2}
   - {fileID: 11400000, guid: 3b345699761ba4dacb31b416d88b42ac, type: 2}
-  inputActions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
-  abilityActionNames:
-  - Ability1
-  - Ability2
-  - Ability3
-  - Ability4
-  globalCooldown: 0.1
+  synchroniseOnAwake: 1
+  enhancedSystem: {fileID: 0}
 --- !u!114 &8452662444167271655
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -215,7 +206,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4f6a8c5cd90584cc2b8014df8dadc845, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  abilitySystem: {fileID: 7667874800401633655}
+  enhancedAbilitySystem: {fileID: 0}
+  legacyAbilitySystem: {fileID: 0}
   abilityActions:
   - {fileID: -1680190386980627800, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   - {fileID: -2099379676528639254, guid: 052faaac586de48259a63d0c4782560b, type: 3}
@@ -305,3 +297,34 @@ MonoBehaviour:
     y: 0
     width: 1
     height: 1
+--- !u!114 &1066243605481967322
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2789967931045629425}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 34817e34b4b8e405a90aac717a7e3ef3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  abilities:
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  maxMana: 100
+  currentMana: 100
+  manaRegenPerSecond: 5
+  outOfCombatManaMultiplier: 2
+  globalCooldown: 0.1
+  enableCooldownReduction: 1
+  maxCooldownReduction: 0.4
+  combatDuration: 5
+  inputActions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  abilityActionNames:
+  - Ability1
+  - Ability2
+  - Ability3
+  - Ability4

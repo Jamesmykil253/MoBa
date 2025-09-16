@@ -126,7 +126,7 @@ namespace MOBA.Configuration
             ErrorHandler.ValidateRange(castingInterruptionRadius, 0f, 5f, context, nameof(castingInterruptionRadius));
             ErrorHandler.ValidateRange(baseMana, 50f, 500f, context, nameof(baseMana));
             ErrorHandler.ValidateRange(manaRegenPerSecond, 1f, 20f, context, nameof(manaRegenPerSecond));
-            ErrorHandler.ValidateRange(outOfCombatManaMultiplier, 0f, 1f, context, nameof(outOfCombatManaMultiplier));
+            ErrorHandler.ValidateRange(outOfCombatManaMultiplier, 0f, 5f, context, nameof(outOfCombatManaMultiplier));
             ErrorHandler.ValidateRange(maxCooldownReduction, 0f, 0.75f, context, nameof(maxCooldownReduction));
         }
 
@@ -141,7 +141,7 @@ namespace MOBA.Configuration
         public float baseMana = 100f;
         [Range(1f, 20f)]
         public float manaRegenPerSecond = 5f;
-        [Range(0f, 1f)]
+        [Range(0f, 5f)]
         public float outOfCombatManaMultiplier = 2f;
 
         [Header("Effects")]
@@ -172,7 +172,7 @@ namespace MOBA.Configuration
             ErrorHandler.ValidateRange(connectionTimeoutMs, 1000, 60000, context, nameof(connectionTimeoutMs));
             ErrorHandler.ValidateRange(sendRate, 16, 128, context, nameof(sendRate));
             ErrorHandler.ValidateRange(defaultPort, 1024, 65535, context, nameof(defaultPort));
-            ErrorHandler.ValidateRange(maxMovementSpeed, 0.1f, 5f, context, nameof(maxMovementSpeed));
+            ErrorHandler.ValidateRange(maxMovementSpeed, 0.1f, 30f, context, nameof(maxMovementSpeed));
             ErrorHandler.ValidateRange(teleportThreshold, 1f, 100f, context, nameof(teleportThreshold));
             ErrorHandler.ValidateRange(maxRetransmissions, 1, 10, context, nameof(maxRetransmissions));
             ErrorHandler.ValidateRange(pingIntervalMs, 10, 1000, context, nameof(pingIntervalMs));
@@ -200,7 +200,7 @@ namespace MOBA.Configuration
         public bool enableServerAuthority = true;
         public bool enableMovementValidation = true;
         public bool enableCombatValidation = true;
-        [Range(0.1f, 5f)]
+        [Range(0.1f, 30f)]
         public float maxMovementSpeed = 15f;
         [Range(1f, 100f)]
         public float teleportThreshold = 20f;

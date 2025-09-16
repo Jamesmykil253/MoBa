@@ -21,8 +21,8 @@ namespace MOBA
         [SerializeField] private int initialPoolSize = 10;
         [SerializeField] private int maxPoolSize = 100;
 
-        // Simple pool storage for now
-        private Dictionary<UnitType, Queue<GameObject>> simplePools = new();
+        // Shared pool storage for now
+        private readonly Dictionary<UnitType, UnifiedObjectPool.GameObjectPool> unitPools = new();
 
         // Unit type enumeration
         public enum UnitType
@@ -67,15 +67,15 @@ namespace MOBA
             {
                 if ((int)unitType < unitPrefabs.Length && unitPrefabs[(int)unitType] != null)
                 {
-                    simplePools[unitType] = new Queue<GameObject>();
-                    
-                    // Pre-populate with a few objects
-                    for (int i = 0; i < initialPoolSize; i++)
-                    {
-                        GameObject obj = Instantiate(unitPrefabs[(int)unitType], spawnParent);
-                        obj.SetActive(false);
-                        simplePools[unitType].Enqueue(obj);
-                    }
+                    string poolName = $"UnitFactory_{gameObject.GetInstanceID()}_{unitType}";
+                    var pool = UnifiedObjectPool.GetGameObjectPool(
+                        poolName,
+                        unitPrefabs[(int)unitType],
+                        initialPoolSize,
+                        maxPoolSize,
+                        spawnParent);
+
+                    unitPools[unitType] = pool;
                 }
             }
         }
@@ -92,25 +92,9 @@ namespace MOBA
 
             GameObject unit = null;
 
-            if (useObjectPooling && simplePools.ContainsKey(type))
+            if (useObjectPooling && unitPools.TryGetValue(type, out var pool) && pool != null)
             {
-                // Use simple pool
-                var pool = simplePools[type];
-                if (pool.Count > 0)
-                {
-                    unit = pool.Dequeue();
-                    if (unit != null)
-                    {
-                        unit.transform.position = position;
-                        unit.transform.rotation = rotation;
-                        unit.SetActive(true);
-                    }
-                }
-                else
-                {
-                    // Create new if pool is empty
-                    unit = Instantiate(unitPrefabs[(int)type], position, rotation, spawnParent);
-                }
+                unit = pool.Get();
             }
             else
             {
@@ -128,6 +112,9 @@ namespace MOBA
                     ("UnitType", type));
                 return null;
             }
+
+            unit.transform.SetParent(spawnParent);
+            unit.transform.SetPositionAndRotation(position, rotation);
 
             // Initialize network components if needed
             if (unit.TryGetComponent(out NetworkObject netObj))
@@ -183,25 +170,9 @@ namespace MOBA
         /// </summary>
         public void ReturnUnit(GameObject unit, UnitType type)
         {
-            if (useObjectPooling && simplePools.ContainsKey(type))
+            if (useObjectPooling && unitPools.TryGetValue(type, out var pool) && pool != null)
             {
-                var pool = simplePools[type];
-                
-                // Enforce max pool size to prevent unlimited growth
-                if (pool.Count < maxPoolSize)
-                {
-                    unit.SetActive(false);
-                    pool.Enqueue(unit);
-                }
-                else
-                {
-                    // Pool is at capacity, destroy the unit instead
-                    Destroy(unit);
-                    GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Pooling),
-                        "Pool at capacity; destroying unit.",
-                        ("UnitType", type),
-                        ("MaxPoolSize", maxPoolSize));
-                }
+                pool.Return(unit);
             }
             else
             {
@@ -226,12 +197,10 @@ namespace MOBA
         {
             var stats = new Dictionary<UnitType, (int, int, int)>();
 
-            foreach (var kvp in simplePools)
+            foreach (var kvp in unitPools)
             {
-                int available = kvp.Value.Count;
-                int total = available + 10; // Estimate, since we don't track total created
-                int active = total - available;
-                stats[kvp.Key] = (total, available, active);
+                var poolStats = kvp.Value.GetStats();
+                stats[kvp.Key] = (poolStats.total, poolStats.available, poolStats.active);
             }
 
             return stats;
@@ -265,8 +234,10 @@ namespace MOBA
             // Add Elom Nusk specific components
             if (!unit.TryGetComponent(out SimpleAbilitySystem abilitySystem))
             {
-                unit.AddComponent<SimpleAbilitySystem>();
+                abilitySystem = unit.AddComponent<SimpleAbilitySystem>();
             }
+
+            abilitySystem.SynchroniseAbilities();
         }
 
         private void InitializeDOGE(GameObject unit)

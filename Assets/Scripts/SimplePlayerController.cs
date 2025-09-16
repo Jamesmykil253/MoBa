@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using MOBA.Abilities;
@@ -7,35 +8,15 @@ using MOBA.Abilities;
 namespace MOBA
 {
     /// <summary>
-    /// Fully rebuilt player controller that leverages modern physics and Input System APIs.
-    /// Implements continuous forward locomotion, advanced jump logic, and minimal combat hooks.
+    /// Player controller that composes the unified movement and ability systems for AAA-ready modularity.
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
     [RequireComponent(typeof(PlayerInput))]
     public class SimplePlayerController : MonoBehaviour, IDamageable
     {
         [Header("Movement")]
-        [SerializeField] private float forwardSpeed = 7.5f;
+        [SerializeField] private UnifiedMovementSystem movementSystem = new UnifiedMovementSystem();
         [SerializeField] private float rotationResponsiveness = 14f;
-        [SerializeField] private float movementBlend = 12f;
-        [SerializeField] private float gravityScale = 1.1f;
-
-        [Header("Jump Heights (meters)")]
-        [SerializeField] private float baseJumpHeight = 1.0f;
-        [SerializeField] private float highJumpHeight = 1.5f;
-        [SerializeField] private float doubleJumpHeight = 2.0f;
-        [SerializeField] private float apexDoubleJumpHeight = 2.8f;
-
-        [Header("Jump Timing")]
-        [SerializeField] private float jumpHoldWindow = 0.18f;
-        [SerializeField] private float apexVelocityTolerance = 0.35f;
-        [SerializeField] private float coyoteTime = 0.12f;
-        [SerializeField] private float jumpBufferTime = 0.1f;
-
-        [Header("Ground Detection")]
-        [SerializeField] private Transform groundProbe;
-        [SerializeField] private float probeRadius = 0.3f;
-        [SerializeField] private LayerMask groundLayers = ~0;
 
         [Header("Input Actions")]
         [SerializeField] private InputActionReference moveActionReference;
@@ -55,30 +36,16 @@ namespace MOBA
 
         private InputAction moveAction;
         private InputAction jumpAction;
-
         private Vector2 moveInput;
         private Vector3 desiredLook = Vector3.forward;
         private Vector3 defaultLookDirection = Vector3.forward;
-        private bool inputActive = true;
-
-        private bool isGrounded;
-        private float lastGroundedTime;
-        private bool jumpHeld;
-        private bool jumpQueued;
-        private float lastJumpRequestTime;
-        private bool canDoubleJump;
-        private bool jumpHoldActive;
-        private float jumpStartedTime;
-        private bool lastJumpReachedHigh;
-
-        private float holdBoostRate;
+        private float yawVelocity;
 
         private float currentHealth;
         private bool isDead;
+        private bool inputActive = true;
         private Vector3 initialSpawnPosition;
         private Coroutine respawnRoutine;
-
-        private float yawVelocity;
 
         public event Action<float, float> HealthChanged;
         public event Action Died;
@@ -93,7 +60,6 @@ namespace MOBA
             enhancedAbilitySystem = GetComponent<EnhancedAbilitySystem>();
 
             ConfigureRigidBody();
-            EnsureGroundProbe();
 
             initialSpawnPosition = transform.position;
             defaultLookDirection = transform.forward.sqrMagnitude > 0.01f
@@ -102,8 +68,9 @@ namespace MOBA
             desiredLook = defaultLookDirection;
 
             currentHealth = maxHealth;
-            holdBoostRate = Mathf.Max(0.01f, CalculateJumpVelocity(highJumpHeight) - CalculateJumpVelocity(baseJumpHeight)) /
-                             Mathf.Max(0.01f, jumpHoldWindow);
+
+            var networkObject = GetComponent<NetworkObject>();
+            movementSystem.Initialize(transform, body, networkObject);
         }
 
         private void OnEnable()
@@ -119,9 +86,9 @@ namespace MOBA
 
         private void Update()
         {
-            if (isDead || !inputActive)
+            if (!inputActive || isDead)
             {
-                moveInput = Vector2.zero;
+                movementSystem.SetMovementInput(Vector3.zero);
                 return;
             }
 
@@ -130,33 +97,20 @@ namespace MOBA
                 moveInput = moveAction.ReadValue<Vector2>();
             }
 
-            UpdateDesiredOrientation();
+            var moveVector = new Vector3(moveInput.x, 0f, moveInput.y);
+            movementSystem.SetMovementInput(moveVector);
+            UpdateDesiredOrientation(moveVector);
         }
 
         private void FixedUpdate()
         {
-            ApplyGroundCheck();
-            HandleJumpBuffer();
-            ApplyJumpHoldBoost();
-            ApplyForwardMotion();
-            ApplyAdditionalGravity();
+            movementSystem.UpdateMovement();
         }
 
         private void ConfigureRigidBody()
         {
             body.interpolation = RigidbodyInterpolation.Interpolate;
             body.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
-        }
-
-        private void EnsureGroundProbe()
-        {
-            if (groundProbe == null)
-            {
-                GameObject probe = new GameObject("GroundProbe");
-                probe.transform.SetParent(transform);
-                probe.transform.localPosition = Vector3.down * 0.9f;
-                groundProbe = probe.transform;
-            }
         }
 
         private void ResolveInputActions()
@@ -184,16 +138,12 @@ namespace MOBA
                 jumpAction = playerInput.actions.FindAction(fallbackJumpAction, throwIfNotFound: false);
             }
 
-            if (moveAction != null)
-            {
-                moveAction.Enable();
-            }
+            moveAction?.Enable();
 
             if (jumpAction != null)
             {
                 jumpAction.Enable();
                 jumpAction.started += OnJumpStarted;
-                jumpAction.canceled += OnJumpCanceled;
             }
         }
 
@@ -202,14 +152,10 @@ namespace MOBA
             if (jumpAction != null)
             {
                 jumpAction.started -= OnJumpStarted;
-                jumpAction.canceled -= OnJumpCanceled;
                 jumpAction.Disable();
             }
 
-            if (moveAction != null)
-            {
-                moveAction.Disable();
-            }
+            moveAction?.Disable();
         }
 
         private void OnJumpStarted(InputAction.CallbackContext context)
@@ -219,23 +165,14 @@ namespace MOBA
                 return;
             }
 
-            jumpHeld = true;
-            jumpQueued = true;
-            lastJumpRequestTime = Time.time;
+            movementSystem.TryJump();
         }
 
-        private void OnJumpCanceled(InputAction.CallbackContext context)
+        private void UpdateDesiredOrientation(Vector3 movementInput)
         {
-            jumpHeld = false;
-            jumpHoldActive = false;
-        }
-
-        private void UpdateDesiredOrientation()
-        {
-            Vector3 inputDirection = new Vector3(moveInput.x, 0f, moveInput.y);
-            if (inputDirection.sqrMagnitude > 0.0001f)
+            if (movementInput.sqrMagnitude > 0.0001f)
             {
-                desiredLook = inputDirection.normalized;
+                desiredLook = movementInput.normalized;
             }
             else
             {
@@ -243,148 +180,15 @@ namespace MOBA
             }
 
             float targetYaw = Mathf.Atan2(desiredLook.x, desiredLook.z) * Mathf.Rad2Deg;
-            float smoothedYaw = Mathf.SmoothDampAngle(transform.eulerAngles.y, targetYaw, ref yawVelocity, 1f / rotationResponsiveness);
+            float smoothedYaw = Mathf.SmoothDampAngle(transform.eulerAngles.y, targetYaw, ref yawVelocity, 1f / Mathf.Max(0.01f, rotationResponsiveness));
             Quaternion nextRotation = Quaternion.Euler(0f, smoothedYaw, 0f);
             body.MoveRotation(nextRotation);
-        }
-
-        private void ApplyForwardMotion()
-        {
-            if (isDead)
-            {
-                Vector3 haltedVelocity = body.linearVelocity;
-                haltedVelocity.x = 0f;
-                haltedVelocity.z = 0f;
-                body.linearVelocity = haltedVelocity;
-                return;
-            }
-
-            Vector3 desiredVelocity = transform.forward * forwardSpeed;
-            Vector3 current = body.linearVelocity;
-            desiredVelocity.y = current.y;
-            Vector3 blended = Vector3.Lerp(current, desiredVelocity, movementBlend * Time.fixedDeltaTime);
-            body.linearVelocity = blended;
-        }
-
-        private void ApplyGroundCheck()
-        {
-            bool wasGrounded = isGrounded;
-            Vector3 probePosition = groundProbe != null ? groundProbe.position : transform.position + Vector3.down * 0.9f;
-            isGrounded = Physics.CheckSphere(probePosition, probeRadius, groundLayers, QueryTriggerInteraction.Ignore);
-
-            if (isGrounded)
-            {
-                lastGroundedTime = Time.time;
-                canDoubleJump = true;
-                jumpHoldActive = false;
-                if (!wasGrounded)
-                {
-                    lastJumpReachedHigh = false;
-                }
-            }
-        }
-
-        private void HandleJumpBuffer()
-        {
-            if (!jumpQueued)
-            {
-                return;
-            }
-
-            bool canUseGroundJump = isGrounded || Time.time <= lastGroundedTime + coyoteTime;
-            bool bufferedExpired = Time.time > lastJumpRequestTime + jumpBufferTime;
-
-            if (canUseGroundJump)
-            {
-                ExecuteGroundJump();
-                return;
-            }
-
-            if (!isGrounded && canDoubleJump)
-            {
-                ExecuteDoubleJump();
-                return;
-            }
-
-            if (bufferedExpired)
-            {
-                jumpQueued = false;
-            }
-        }
-
-        private void ExecuteGroundJump()
-        {
-            jumpQueued = false;
-            canDoubleJump = true;
-            jumpHoldActive = true;
-            jumpStartedTime = Time.time;
-            lastJumpReachedHigh = false;
-
-            Vector3 velocity = body.linearVelocity;
-            velocity.y = CalculateJumpVelocity(baseJumpHeight);
-            body.linearVelocity = velocity;
-        }
-
-        private void ExecuteDoubleJump()
-        {
-            jumpQueued = false;
-            canDoubleJump = false;
-            jumpHoldActive = false;
-
-            bool atHighApex = lastJumpReachedHigh && Mathf.Abs(body.linearVelocity.y) <= apexVelocityTolerance;
-            float targetHeight = atHighApex ? apexDoubleJumpHeight : doubleJumpHeight;
-            Vector3 velocity = body.linearVelocity;
-            velocity.y = CalculateJumpVelocity(targetHeight);
-            body.linearVelocity = velocity;
-
-            lastJumpReachedHigh = atHighApex;
-        }
-
-        private void ApplyJumpHoldBoost()
-        {
-            if (!jumpHoldActive)
-            {
-                return;
-            }
-
-            if (!jumpHeld || Time.time > jumpStartedTime + jumpHoldWindow)
-            {
-                jumpHoldActive = false;
-                return;
-            }
-
-            float targetVelocity = CalculateJumpVelocity(highJumpHeight);
-            Vector3 current = body.linearVelocity;
-            float boostedY = Mathf.MoveTowards(current.y, targetVelocity, holdBoostRate * Time.fixedDeltaTime);
-            current.y = boostedY;
-            body.linearVelocity = current;
-
-            if (Mathf.Abs(boostedY - targetVelocity) <= 0.05f)
-            {
-                lastJumpReachedHigh = true;
-            }
-        }
-
-        private void ApplyAdditionalGravity()
-        {
-            if (gravityScale <= 1f)
-            {
-                return;
-            }
-
-            Vector3 extraGravity = Physics.gravity * (gravityScale - 1f);
-            body.AddForce(extraGravity, ForceMode.Acceleration);
-        }
-
-        private float CalculateJumpVelocity(float height)
-        {
-            float gravityMagnitude = Mathf.Abs(Physics.gravity.y * gravityScale);
-            return Mathf.Sqrt(Mathf.Max(0.01f, 2f * gravityMagnitude * height));
         }
 
         public void SetInputEnabled(bool enabled)
         {
             inputActive = enabled;
+
             if (enabled)
             {
                 moveAction?.Enable();
@@ -395,8 +199,7 @@ namespace MOBA
                 moveInput = Vector2.zero;
                 moveAction?.Disable();
                 jumpAction?.Disable();
-                jumpQueued = false;
-                jumpHoldActive = false;
+                movementSystem.SetMovementInput(Vector3.zero);
                 desiredLook = defaultLookDirection;
             }
 
@@ -459,9 +262,9 @@ namespace MOBA
             HealthChanged?.Invoke(currentHealth, maxHealth);
 
             isDead = false;
-            SetInputEnabled(true);
             desiredLook = defaultLookDirection;
             transform.rotation = Quaternion.LookRotation(defaultLookDirection, Vector3.up);
+            SetInputEnabled(true);
             respawnRoutine = null;
         }
 
@@ -469,13 +272,7 @@ namespace MOBA
 
         private void OnDrawGizmosSelected()
         {
-            if (groundProbe == null)
-            {
-                return;
-            }
-
-            Gizmos.color = Color.cyan;
-            Gizmos.DrawWireSphere(groundProbe.position, probeRadius);
+            movementSystem?.DrawDebugInfo();
         }
     }
 }

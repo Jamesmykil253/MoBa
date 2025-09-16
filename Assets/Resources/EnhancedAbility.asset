@@ -1,0 +1,35 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 0}
+  m_Name: EnhancedAbility
+  m_EditorClassIdentifier: MOBA.Runtime:MOBA.Abilities:EnhancedAbility
+  abilityName: New Ability
+  description: Ability description
+  icon: {fileID: 0}
+  manaCost: 50
+  cooldown: 5
+  castTime: 0
+  damage: 100
+  range: 5
+  maxTargets: 5
+  enableParticleEffect: 1
+  effectColor: {r: 0, g: 0, b: 1, a: 1}
+  enableScreenShake: 0
+  screenShakeIntensity: 0.1
+  castSound: {fileID: 0}
+  hitSound: {fileID: 0}
+  volume: 1
+  abilityType: 0
+  targetType: 0
+  canCritical: 1
+  criticalChance: 0.05
+  criticalMultiplier: 1.5
