@@ -156,10 +156,10 @@ namespace MOBA
             float currentSpeed = isChasing ? moveSpeed * 1.2f : moveSpeed;
 
             // FIXED: Remove Time.deltaTime from velocity calculation - velocity is already per-second
-            Vector3 currentVelocity = rb.velocity;
+            Vector3 currentVelocity = rb.linearVelocity;
             currentVelocity.x = direction.x * currentSpeed;
             currentVelocity.z = direction.z * currentSpeed;
-            rb.velocity = currentVelocity;
+            rb.linearVelocity = currentVelocity;
 
             // Look at target
             transform.LookAt(new Vector3(target.position.x, transform.position.y, target.position.z));
@@ -178,19 +178,19 @@ namespace MOBA
                 // Use slower speed when returning (not chasing)
                 float returnSpeed = isChasing ? moveSpeed : moveSpeed * 0.5f;
                 // FIXED: Remove Time.deltaTime from velocity calculation
-                Vector3 currentVelocity = rb.velocity;
+                Vector3 currentVelocity = rb.linearVelocity;
                 currentVelocity.x = direction.x * returnSpeed;
                 currentVelocity.z = direction.z * returnSpeed;
-                rb.velocity = currentVelocity;
+                rb.linearVelocity = currentVelocity;
             }
             else
             {
                 // Stop moving when close to origin
                 isChasing = false;
-                Vector3 currentVelocity = rb.velocity;
+                Vector3 currentVelocity = rb.linearVelocity;
                 currentVelocity.x = 0f;
                 currentVelocity.z = 0f;
-                rb.velocity = currentVelocity;
+                rb.linearVelocity = currentVelocity;
             }
         }
 
@@ -296,7 +296,7 @@ namespace MOBA
             Debug.Log("[EnemyController] Enemy died!");
 
             // Stop movement
-            rb.velocity = Vector3.zero;
+            rb.linearVelocity = Vector3.zero;
 
             // Create death effect
             CreateDeathEffect();

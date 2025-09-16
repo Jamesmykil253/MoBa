@@ -284,11 +284,11 @@ namespace MOBA
             Vector3 movement = moveInput.normalized * moveSpeed;
 
             // Preserve Y velocity for gravity and jumping
-            Vector3 currentVelocity = rb.velocity;
+            Vector3 currentVelocity = rb.linearVelocity;
             Vector3 targetVelocity = new Vector3(movement.x, currentVelocity.y, movement.z);
 
             // Apply movement using physics system for proper collision detection
-            rb.velocity = targetVelocity;
+            rb.linearVelocity = targetVelocity;
         }
 
         void Jump()
@@ -414,7 +414,7 @@ namespace MOBA
             {
                 if (!active)
                 {
-                    rb.velocity = Vector3.zero;
+                    rb.linearVelocity = Vector3.zero;
                 }
                 rb.isKinematic = !active;
             }
