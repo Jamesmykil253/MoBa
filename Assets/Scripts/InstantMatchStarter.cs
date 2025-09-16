@@ -1,4 +1,5 @@
 using UnityEngine;
+using MOBA.Debugging;
 
 namespace MOBA
 {
@@ -8,6 +9,12 @@ namespace MOBA
     /// </summary>
     public class InstantMatchStarter : MonoBehaviour
     {
+        private static readonly GameDebugContext DebugContext = new GameDebugContext(
+            GameDebugCategory.GameLifecycle,
+            GameDebugSystemTag.GameLifecycle,
+            GameDebugMechanicTag.Initialization,
+            subsystem: nameof(InstantMatchStarter));
+
         [Header("Game Manager Source")]
         [SerializeField] private SimpleGameManager existingGameManager;
         [SerializeField] private SimpleGameManager gameManagerPrefab;
@@ -18,6 +25,7 @@ namespace MOBA
 
         private void Awake()
         {
+            GameDebug.Log(DebugContext, "Ensuring game manager on Awake.");
             EnsureGameManager();
 
             if (startOnAwake)
@@ -35,13 +43,13 @@ namespace MOBA
 
             if (existingGameManager == null)
             {
-                Debug.LogError("[InstantMatchStarter] No SimpleGameManager available to start a match.");
+                GameDebug.LogError(DebugContext, "No SimpleGameManager available to start a match.");
                 return;
             }
 
             if (!existingGameManager.StartMatch())
             {
-                Debug.LogWarning("[InstantMatchStarter] SimpleGameManager reported an active match; no additional match was started.");
+                GameDebug.LogWarning(DebugContext, "SimpleGameManager reported an active match; skipping duplicate start.");
             }
         }
 
@@ -57,6 +65,7 @@ namespace MOBA
             if (existingGameManager == null && instantiateIfMissing && gameManagerPrefab != null)
             {
                 existingGameManager = Instantiate(gameManagerPrefab);
+                GameDebug.Log(DebugContext, "Instantiated fallback SimpleGameManager instance.");
             }
         }
     }

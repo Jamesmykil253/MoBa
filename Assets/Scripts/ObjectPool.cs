@@ -1,6 +1,7 @@
-using System.Collections.Generic;
-using UnityEngine;
 using System;
+using System.Collections.Generic;
+using MOBA.Debugging;
+using UnityEngine;
 
 namespace MOBA
 {
@@ -18,6 +19,12 @@ namespace MOBA
         private readonly Transform parent;
         private readonly int initialSize;
         private bool disposed = false;
+
+        private GameDebugContext DebugContext => new GameDebugContext(
+            GameDebugCategory.Pooling,
+            GameDebugSystemTag.Pooling,
+            GameDebugMechanicTag.Pooling,
+            subsystem: typeof(T).Name);
 
         /// <summary>
         /// Creates a new object pool
@@ -44,7 +51,11 @@ namespace MOBA
         /// <returns>Available object from the pool</returns>
         public T Get()
         {
-            if (disposed) throw new ObjectDisposedException(nameof(ObjectPool<T>));
+            if (disposed)
+            {
+                GameDebug.LogError(DebugContext, "Attempted to fetch from a disposed pool.");
+                throw new ObjectDisposedException(nameof(ObjectPool<T>));
+            }
             
             T obj;
             if (availableObjects.Count > 0)
@@ -73,10 +84,10 @@ namespace MOBA
             
             if (disposed) 
             {
-                Debug.LogError("[ObjectPool] Cannot get object from disposed pool");
+                GameDebug.LogError(DebugContext, "Cannot get object from disposed pool.");
                 return false;
             }
-            
+
             try
             {
                 if (availableObjects.Count > 0)
@@ -90,7 +101,7 @@ namespace MOBA
 
                 if (obj == null)
                 {
-                    Debug.LogError("[ObjectPool] Failed to create or retrieve object");
+                    GameDebug.LogError(DebugContext, "Failed to create or retrieve pooled object instance.");
                     return false;
                 }
 
@@ -99,7 +110,7 @@ namespace MOBA
             }
             catch (System.Exception ex)
             {
-                Debug.LogError($"[ObjectPool] Error getting object: {ex.Message}");
+                GameDebug.LogException(ex, DebugContext);
                 return false;
             }
         }
@@ -144,16 +155,18 @@ namespace MOBA
             // Create new instance from the prefab
             if (prefab == null)
             {
-                Debug.LogError("[ObjectPool] Prefab is null, cannot create new object");
+                GameDebug.LogError(DebugContext, "Prefab reference is null; cannot create new pooled object.");
                 return null;
             }
 
             GameObject newObj = UnityEngine.Object.Instantiate(prefab.gameObject, parent);
             T component = newObj.GetComponent<T>();
-            
+
             if (component == null)
             {
-                Debug.LogError($"[ObjectPool] Prefab object {prefab.gameObject.name} does not have component {typeof(T).Name}");
+                GameDebug.LogError(
+                    DebugContext,
+                    $"Prefab object {prefab.gameObject.name} missing required component {typeof(T).Name}.");
                 UnityEngine.Object.Destroy(newObj);
                 return null;
             }

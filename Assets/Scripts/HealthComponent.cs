@@ -1,4 +1,5 @@
 using UnityEngine;
+using MOBA.Debugging;
 
 namespace MOBA
 {
@@ -20,6 +21,16 @@ namespace MOBA
         // Component references
         private Renderer meshRenderer;
         private Color originalColor;
+
+        private GameDebugContext GetContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.General)
+        {
+            return new GameDebugContext(
+                GameDebugCategory.Health,
+                GameDebugSystemTag.Health,
+                mechanic,
+                subsystem: nameof(HealthComponent),
+                actor: gameObject != null ? gameObject.name : null);
+        }
 
         // Events
         public System.Action<float, float> OnHealthChanged; // current, max
@@ -55,7 +66,12 @@ namespace MOBA
 
             currentHealth = Mathf.Max(0f, currentHealth - damage);
             
-            Debug.Log($"[HealthComponent] {gameObject.name} took {damage} damage. Health: {currentHealth}/{maxHealth}");
+            GameDebug.Log(
+                GetContext(GameDebugMechanicTag.Damage),
+                "Damage applied to health component.",
+                ("Damage", damage),
+                ("Current", currentHealth),
+                ("Max", maxHealth));
 
             // Update visuals
             UpdateVisuals();
@@ -79,7 +95,12 @@ namespace MOBA
 
             currentHealth = Mathf.Min(maxHealth, currentHealth + amount);
             
-            Debug.Log($"[HealthComponent] {gameObject.name} healed {amount}. Health: {currentHealth}/{maxHealth}");
+            GameDebug.Log(
+                GetContext(GameDebugMechanicTag.Healing),
+                "Healing applied to health component.",
+                ("Amount", amount),
+                ("Current", currentHealth),
+                ("Max", maxHealth));
 
             UpdateVisuals();
             OnHealthChanged?.Invoke(currentHealth, maxHealth);
@@ -133,7 +154,9 @@ namespace MOBA
 
         private void HandleDeath()
         {
-            Debug.Log($"[HealthComponent] {gameObject.name} died!");
+            GameDebug.Log(
+                GetContext(GameDebugMechanicTag.StateChange),
+                "Health component reached zero and triggered death state.");
 
             OnDeath?.Invoke();
 

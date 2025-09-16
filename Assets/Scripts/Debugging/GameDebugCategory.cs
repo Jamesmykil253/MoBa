@@ -16,6 +16,17 @@ namespace MOBA.Debugging
         Pooling,
         UI,
         Performance,
-        ErrorHandling
+        ErrorHandling,
+        Configuration,
+        Initialization,
+        Scene,
+        Movement,
+        Combat,
+        Health,
+        Resource,
+        Projectile,
+        AI,
+        Audio,
+        Diagnostics
     }
 }
