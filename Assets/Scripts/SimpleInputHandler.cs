@@ -4,11 +4,14 @@ using UnityEngine.InputSystem;
 namespace MOBA
 {
     /// <summary>
-    /// Simple input handler for basic MOBA controls
+    /// Bridges Input System actions to <see cref="SimpleAbilitySystem"/> casts.
     /// </summary>
     public class SimpleInputHandler : MonoBehaviour
     {
         [SerializeField] private SimpleAbilitySystem abilitySystem;
+        [SerializeField] private InputActionReference[] abilityActions = new InputActionReference[4];
+
+        private System.Action<InputAction.CallbackContext>[] actionHandlers;
 
         private void Awake()
         {
@@ -18,24 +21,56 @@ namespace MOBA
             }
         }
 
-        private void Update()
+        private void OnEnable()
         {
-            // Basic keyboard input for abilities
-            if (Input.GetKeyDown(KeyCode.Q))
+            if (abilityActions == null) return;
+
+            if (actionHandlers == null || actionHandlers.Length != abilityActions.Length)
             {
-                abilitySystem?.TryCastAbility(0);
+                actionHandlers = new System.Action<InputAction.CallbackContext>[abilityActions.Length];
             }
-            if (Input.GetKeyDown(KeyCode.W))
+
+            for (int i = 0; i < abilityActions.Length; i++)
             {
-                abilitySystem?.TryCastAbility(1);
+                var reference = abilityActions[i];
+                if (reference == null) continue;
+                var action = reference.action;
+                if (action == null) continue;
+
+                if (actionHandlers[i] == null)
+                {
+                    int abilityIndex = i;
+                    actionHandlers[i] = ctx => abilitySystem?.TryCastAbility(abilityIndex);
+                }
+
+                action.performed += actionHandlers[i];
+                if (!action.enabled)
+                {
+                    action.Enable();
+                }
             }
-            if (Input.GetKeyDown(KeyCode.E))
+        }
+
+        private void OnDisable()
+        {
+            if (abilityActions == null) return;
+
+            for (int i = 0; i < abilityActions.Length; i++)
             {
-                abilitySystem?.TryCastAbility(2);
-            }
-            if (Input.GetKeyDown(KeyCode.R))
-            {
-                abilitySystem?.TryCastAbility(3);
+                var reference = abilityActions[i];
+                if (reference == null) continue;
+                var action = reference.action;
+                if (action == null) continue;
+
+                if (actionHandlers != null && actionHandlers.Length > i && actionHandlers[i] != null)
+                {
+                    action.performed -= actionHandlers[i];
+                }
+
+                if (action.enabled)
+                {
+                    action.Disable();
+                }
             }
         }
     }

@@ -17,15 +17,19 @@ namespace MOBA
         public Transform[] enemySpawnPoints;
         public GameObject playerPrefab;
         public GameObject enemyPrefab;
-        
+
         [Header("UI")]
         public UnityEngine.UI.Text timeText;
         public UnityEngine.UI.Text scoreText;
-        
+
         // Game state
         private float currentTime;
         private int[] teamScores = new int[2];
-        private bool gameActive = true;
+        private bool gameActive = false;
+
+        [Header("Runtime")]
+        [SerializeField] private bool autoStartOnEnable = true;
+        [SerializeField] private bool spawnSingleLocalPlayer = true;
         
     // Events
     /// <summary>
@@ -39,9 +43,12 @@ namespace MOBA
         
         void Start()
         {
-            StartGame();
+            if (autoStartOnEnable && !gameActive)
+            {
+                StartMatch();
+            }
         }
-        
+
         void Update()
         {
             if (!gameActive) return;
@@ -51,8 +58,14 @@ namespace MOBA
             CheckWinConditions();
         }
         
-        void StartGame()
+        public bool StartMatch()
         {
+            if (gameActive)
+            {
+                Debug.LogWarning("[SimpleGameManager] StartMatch called while a match is already active.");
+                return false;
+            }
+
             currentTime = gameTime;
             teamScores[0] = 0;
             teamScores[1] = 0;
@@ -66,6 +79,7 @@ namespace MOBA
             InitializeEnemiesInScene();
 
             Debug.Log("Game Started!");
+            return true;
         }
         // --- Validation for spawns and prefabs ---
         private void ValidateSpawnsAndPrefabs()
@@ -130,11 +144,15 @@ namespace MOBA
         
         void SpawnPlayers()
         {
-            for (int i = 0; i < playerSpawnPoints.Length && i < maxPlayers; i++)
+            int spawnLimit = spawnSingleLocalPlayer ? 1 : Mathf.Min(playerSpawnPoints.Length, maxPlayers);
+            int spawned = 0;
+
+            for (int i = 0; i < playerSpawnPoints.Length && spawned < spawnLimit; i++)
             {
                 if (playerPrefab != null && playerSpawnPoints[i] != null)
                 {
                     Instantiate(playerPrefab, playerSpawnPoints[i].position, playerSpawnPoints[i].rotation);
+                    spawned++;
                 }
             }
         }

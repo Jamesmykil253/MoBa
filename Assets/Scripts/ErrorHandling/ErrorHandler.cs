@@ -472,9 +472,8 @@ namespace MOBA.ErrorHandling
     public class ErrorHandlerMonoBehaviour : MonoBehaviour
     {
         [Header("Error Monitoring")]
-        [SerializeField] private bool showErrorStats = true;
         [SerializeField] private bool enableErrorThresholdNotifications = true;
-        
+
         private void Start()
         {
             ErrorHandler.Initialize();
@@ -501,22 +500,6 @@ namespace MOBA.ErrorHandling
             // - Triggering automatic recovery procedures
         }
         
-        void OnGUI()
-        {
-            if (!showErrorStats) return;
-            
-            var errorCounts = ErrorHandler.GetErrorCounts();
-            int yOffset = 200;
-            
-            GUI.Label(new Rect(10, yOffset, 300, 20), "Error Statistics:");
-            yOffset += 20;
-            
-            foreach (var kvp in errorCounts)
-            {
-                GUI.Label(new Rect(10, yOffset, 300, 20), $"{kvp.Key}: {kvp.Value}");
-                yOffset += 20;
-            }
-        }
     }
     
     #region Supporting Types

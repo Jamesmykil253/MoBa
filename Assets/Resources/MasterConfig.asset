@@ -13,9 +13,9 @@ MonoBehaviour:
   m_Name: MasterConfig
   m_EditorClassIdentifier: MOBA.Runtime:MOBA.Configuration:MasterConfig
   playerConfig: {fileID: 11400000, guid: 46eb1161b7950489b8c4dc04dec29962, type: 2}
-  gameConfig: {fileID: 0}
-  abilityConfig: {fileID: 0}
-  networkConfig: {fileID: 0}
+  gameConfig: {fileID: 11400000, guid: 2eae8a652bb8c47689b510aefe0c275d, type: 2}
+  abilityConfig: {fileID: 11400000, guid: 851823011aa7546bb916410e1d4e4b52, type: 2}
+  networkConfig: {fileID: 11400000, guid: 824f9b94242e24cc986cb2394286ef83, type: 2}
   mainMenuScene: MainMenu
   gameplayScene: Gameplay
   loadingScene: Loading

@@ -10,7 +10,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 0}
-  m_Name: AbilitySystemConfig
+  m_Name: AbilitySystemConfig 1
   m_EditorClassIdentifier: MOBA.Runtime:MOBA.Configuration:AbilitySystemConfig
   globalCooldown: 0.1
   castingInterruptionRadius: 2

@@ -10,7 +10,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 0}
-  m_Name: GameConfig
+  m_Name: GameConfig 1
   m_EditorClassIdentifier: MOBA.Runtime:MOBA.Configuration:GameConfig
   maxPlayers: 10
   gameTimeInSeconds: 1800

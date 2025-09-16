@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using MOBA.Networking;
+using System.Collections;
 using System.Collections.Generic;
 using MOBA.Configuration;
 using MOBA.Abilities;
@@ -45,6 +46,9 @@ namespace MOBA
     /// Jump force applied to the player.
     /// </summary>
     public float jumpForce = 8f;
+    [SerializeField] private bool allowDoubleJump = true;
+    [SerializeField, Tooltip("Number of jumps available while airborne.")]
+    private int maxAirJumps = 1;
 
     [Header("Combat")]
     /// <summary>
@@ -73,6 +77,7 @@ namespace MOBA
         private bool isGrounded;
         private bool canControl = true;
         private bool isAlive = true;
+        private int remainingAirJumps = 0;
 
         // Input Actions
         private InputAction moveAction;
@@ -154,6 +159,8 @@ namespace MOBA
             canControl = true;
             isAlive = true;
             abilitySystem?.SetInputEnabled(true);
+            EnsureCameraFollowsPlayer();
+            remainingAirJumps = allowDoubleJump ? Mathf.Max(0, maxAirJumps) : 0;
             
             // Enable input actions if available
             if (isAlive && canControl)
@@ -250,6 +257,11 @@ namespace MOBA
                 groundNormal = Vector3.up;
                 currentPlatform = null;
             }
+
+            if (isGrounded)
+            {
+                remainingAirJumps = allowDoubleJump ? Mathf.Max(0, maxAirJumps) : 0;
+            }
         }
 
         void HandleInput()
@@ -263,9 +275,16 @@ namespace MOBA
             }
 
             // Jump with modern Input System
-            if (jumpAction != null && jumpAction.WasPressedThisFrame() && isGrounded)
+            if (jumpAction != null && jumpAction.WasPressedThisFrame())
             {
-                Jump();
+                if (isGrounded)
+                {
+                    Jump();
+                }
+                else if (allowDoubleJump && remainingAirJumps > 0)
+                {
+                    AirJump();
+                }
             }
 
             // Attack with modern Input System
@@ -293,6 +312,20 @@ namespace MOBA
 
         void Jump()
         {
+            if (rb == null) return;
+            Vector3 velocity = rb.linearVelocity;
+            velocity.y = 0f;
+            rb.linearVelocity = velocity;
+            rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
+        }
+
+        void AirJump()
+        {
+            if (rb == null) return;
+            remainingAirJumps = Mathf.Max(remainingAirJumps - 1, 0);
+            Vector3 velocity = rb.linearVelocity;
+            velocity.y = 0f;
+            rb.linearVelocity = velocity;
             rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
         }
 
@@ -455,6 +488,7 @@ namespace MOBA
                     jumpAction?.Enable();
                     attackAction?.Enable();
                 }
+                remainingAirJumps = allowDoubleJump ? Mathf.Max(0, maxAirJumps) : 0;
             }
 
             abilitySystem?.SetInputEnabled(active && isAlive && canControl);
@@ -472,6 +506,31 @@ namespace MOBA
             attackRange = runtimePlayerConfig.attackRange;
             groundCheckDistance = runtimePlayerConfig.groundCheckDistance;
             groundLayerMask = runtimePlayerConfig.groundLayerMask;
+        }
+
+        private void EnsureCameraFollowsPlayer()
+        {
+            StartCoroutine(BindCameraRoutine());
+        }
+
+        private System.Collections.IEnumerator BindCameraRoutine()
+        {
+            float timeout = 3f;
+            float endTime = Time.time + timeout;
+
+            while (Time.time <= endTime)
+            {
+                var cameraController = FindFirstObjectByType<SimpleCameraController>();
+                if (cameraController != null)
+                {
+                    cameraController.SetTarget(transform);
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            Debug.LogWarning("[SimplePlayerController] Failed to find SimpleCameraController within timeout. Camera follow may not work until manually assigned.");
         }
     }
 }

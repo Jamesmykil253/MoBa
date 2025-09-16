@@ -48,7 +48,6 @@ namespace MOBA.Abilities
         // Input state
         private InputAction[] abilityInputActions;
         private System.Action<InputAction.CallbackContext>[] abilityActionHandlers;
-        private bool[] actionAvailable;
         private bool hasInputActions;
         private bool inputActionsInitialized;
         private bool inputEnabled = true;
@@ -108,7 +107,6 @@ namespace MOBA.Abilities
             UpdateCooldowns();
             UpdateManaRegeneration();
             UpdateCombatState();
-            HandleInput();
         }
         
         void OnDisable()
@@ -232,30 +230,6 @@ namespace MOBA.Abilities
                 isInCombat = true;
                 OnCombatStateChanged?.Invoke(true);
             }
-        }
-        
-        #endregion
-        
-        #region Input Handling
-        
-        private void HandleInput()
-        {
-            if (!inputEnabled)
-            {
-                return;
-            }
-
-            bool HasAction(int index)
-            {
-                if (actionAvailable == null || index < 0 || index >= actionAvailable.Length)
-                    return false;
-                return actionAvailable[index];
-            }
-
-            if (!HasAction(0) && Input.GetKeyDown(KeyCode.Q)) TryCastAbility(0);
-            if (!HasAction(1) && Input.GetKeyDown(KeyCode.W)) TryCastAbility(1);
-            if (!HasAction(2) && Input.GetKeyDown(KeyCode.E)) TryCastAbility(2);
-            if (!HasAction(3) && Input.GetKeyDown(KeyCode.R)) TryCastAbility(3);
         }
         
         #endregion
@@ -531,28 +505,6 @@ namespace MOBA.Abilities
 
         #endregion
 
-        #region Debug
-        
-        void OnGUI()
-        {
-            if (!Application.isPlaying) return;
-            
-            GUI.Label(new Rect(10, 10, 300, 20), $"Mana: {currentMana:F1}/{maxMana:F1} ({ManaPercentage:P0})");
-            GUI.Label(new Rect(10, 30, 300, 20), $"Combat: {(isInCombat ? "Yes" : "No")} | CDR: {currentCooldownReduction:P0}");
-            
-            for (int i = 0; i < abilities.Length; i++)
-            {
-                if (abilities[i] != null)
-                {
-                    string status = IsAbilityReady(i) ? "Ready" : $"CD: {GetCooldownRemaining(i):F1}s";
-                    GUI.Label(new Rect(10, 50 + i * 20, 300, 20), 
-                        $"{i + 1}. {abilities[i].abilityName} - {status}");
-                }
-            }
-        }
-        
-        #endregion
-
         #region Input Integration
 
         private void InitializeInputActions()
@@ -584,7 +536,6 @@ namespace MOBA.Abilities
             int abilityCount = abilities.Length;
             abilityInputActions = new InputAction[abilityCount];
             abilityActionHandlers = new System.Action<InputAction.CallbackContext>[abilityCount];
-            actionAvailable = new bool[abilityCount];
 
             if (inputActions != null)
             {
@@ -615,7 +566,6 @@ namespace MOBA.Abilities
                         TryCastAbility(abilityIndex);
                     };
                     action.performed += abilityActionHandlers[i];
-                    actionAvailable[i] = true;
                     hasInputActions = true;
                 }
             }
@@ -664,10 +614,6 @@ namespace MOBA.Abilities
                 if (abilityActionHandlers.Length > i && abilityActionHandlers[i] != null)
                 {
                     abilityInputActions[i].performed -= abilityActionHandlers[i];
-                }
-                if (actionAvailable != null && i < actionAvailable.Length)
-                {
-                    actionAvailable[i] = false;
                 }
             }
 

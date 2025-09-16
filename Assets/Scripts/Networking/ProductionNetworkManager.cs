@@ -36,7 +36,6 @@ namespace MOBA.Networking
         [Header("Network Configuration")]
         [SerializeField] private string serverIP = "127.0.0.1";
         [SerializeField] private ushort serverPort = 7777;
-        [SerializeField] private int maxConnections = 10;
         [Header("Game Settings")]
         [SerializeField] private bool autoStartAsHost = false;
         [SerializeField] private bool enableReconnection = true;
@@ -46,9 +45,7 @@ namespace MOBA.Networking
         [SerializeField] private bool enableServerValidation = true;
         [SerializeField] private float maxAllowedPing = 500f;
         [Header("Debug")]
-        [SerializeField] private bool showDebugUI = true;
         [SerializeField] private bool logNetworkEvents = true;
-        [SerializeField] private bool showNetworkStats = false;
         // Network state tracking
         private NetworkConnectionState connectionState = NetworkConnectionState.Disconnected;
         private float lastPingTime = 0f;
@@ -531,62 +528,6 @@ namespace MOBA.Networking
         
         #endregion
         
-        #region Debug UI
-        
-        void OnGUI()
-        {
-            if (!showDebugUI) return;
-            
-            GUILayout.BeginArea(new Rect(10, 10, 300, 400));
-            
-            GUILayout.Label($"Network Manager - {connectionState}");
-            GUILayout.Label($"Players: {currentPlayerCount}/{maxConnections}");
-            GUILayout.Label($"Ping: {currentPing:F0}ms");
-
-            if (reconnectionAttempts > 0)
-            {
-                GUILayout.Label($"Reconnection attempts: {reconnectionAttempts}/{maxReconnectionAttempts}");
-            }
-
-            // Show error code and user message if error
-            if (connectionState == NetworkConnectionState.Error ||
-                (connectionState == NetworkConnectionState.Disconnected && reconnectionAttempts >= maxReconnectionAttempts))
-            {
-                GUIStyle errorStyle = new GUIStyle(GUI.skin.label);
-                errorStyle.normal.textColor = Color.red;
-                errorStyle.fontStyle = FontStyle.Bold;
-                GUILayout.Space(10);
-                string userMessage = GetUserFriendlyErrorMessage(lastErrorCode, lastErrorMessage);
-                GUILayout.Label($"Error [{lastErrorCode}]: {userMessage}", errorStyle);
-            }
-
-            GUILayout.Space(10);
-
-            if (connectionState == NetworkConnectionState.Disconnected)
-            {
-                if (GUILayout.Button("Start Host")) StartHost();
-                if (GUILayout.Button("Start Server")) StartServer();
-                if (GUILayout.Button("Start Client")) StartClient();
-            }
-            else
-            {
-                if (GUILayout.Button("Disconnect")) Disconnect();
-            }
-
-            GUILayout.Space(10);
-
-            if (showNetworkStats && connectionState == NetworkConnectionState.Connected)
-            {
-                GUILayout.Label("Connected Players:");
-                foreach (var player in connectedPlayers.Values)
-                {
-                    GUILayout.Label($"  Player {player.ClientId} - {Time.time - player.ConnectedTime:F0}s");
-                }
-            }
-
-            GUILayout.EndArea();
-        }
-        
         private string GetUserFriendlyErrorMessage(NetworkErrorCode code, string details)
         {
             switch (code)
@@ -613,7 +554,6 @@ namespace MOBA.Networking
             }
         }
 
-        #endregion
     }
     
     #region Supporting Types

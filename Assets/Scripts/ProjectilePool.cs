@@ -178,14 +178,6 @@ namespace MOBA
             Debug.Log("[ProjectilePool] ReturnAll not implemented in UnifiedObjectPool - consider manual cleanup");
         }
 
-        private void OnGUI()
-        {
-            if (projectilePool != null)
-            {
-                var stats = projectilePool.GetStats();
-                GUI.Label(new Rect(10, 130, 300, 20), $"Projectile Pool - Total: {stats.total}, Available: {stats.available}, Active: {stats.active}");
-            }
-        }
     }
 
     /// <summary>

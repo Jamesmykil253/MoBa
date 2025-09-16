@@ -28,23 +28,18 @@ namespace MOBA
         private Vector3 targetPosition;
         private bool isPanning = false;
         private Vector3 lastMousePosition;
+        private float nextTargetSearchTime = 0f;
+        [SerializeField] private float targetSearchInterval = 1f;
         
         void Start()
         {
             cam = GetComponent<Camera>();
-            
-            // Auto-find player if no target set
-            if (target == null)
-            {
-                var player = FindFirstObjectByType<SimplePlayerController>();
-                if (player != null)
-                    target = player.transform;
-            }
+            TryResolveTarget(true);
         }
         
         void LateUpdate()
         {
-            if (target == null) return;
+            if (!EnsureTarget()) return;
             
             HandleInput();
             UpdateCameraPosition();
@@ -131,13 +126,37 @@ namespace MOBA
         {
             target = newTarget;
         }
-        
+
         /// <summary>
         /// Reset camera to default position
         /// </summary>
         public void ResetPosition()
         {
             offset = new Vector3(0, 15, -10);
+        }
+
+        private bool EnsureTarget()
+        {
+            if (target != null) return true;
+
+            TryResolveTarget(false);
+            return target != null;
+        }
+
+        private void TryResolveTarget(bool force)
+        {
+            if (!force && Time.time < nextTargetSearchTime)
+            {
+                return;
+            }
+
+            nextTargetSearchTime = Time.time + Mathf.Max(0.1f, targetSearchInterval);
+
+            var player = FindFirstObjectByType<SimplePlayerController>();
+            if (player != null)
+            {
+                target = player.transform;
+            }
         }
     }
 }

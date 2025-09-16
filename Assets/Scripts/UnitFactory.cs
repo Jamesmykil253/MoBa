@@ -269,20 +269,6 @@ namespace MOBA
             // Add inhibitor respawn mechanics
         }
 
-        private void OnGUI()
-        {
-            if (!Application.isEditor) return;
-
-            GUI.Label(new Rect(10, 10, 300, 20), "Unit Factory - Pool Statistics:");
-
-            int y = 30;
-            foreach (var kvp in GetPoolStats())
-            {
-                var (total, available, active) = kvp.Value;
-                GUI.Label(new Rect(10, y, 300, 20),
-                    $"{kvp.Key}: Total={total}, Available={available}, Active={active}");
-                y += 20;
-            }
-        }
+        // Legacy OnGUI debug output removed; integrate with dedicated debugging tools if needed.
     }
 }

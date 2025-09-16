@@ -41,12 +41,14 @@ namespace MOBA
 
         // State tracking
         private bool isDead;
+
+        [Header("Debug")]
+        [SerializeField] private bool logDebugMessages = false;
         private bool isInitialized;
 
         private void Awake()
         {
-            // REMOVED: No auto-initialization - manual setup required for MOBA best practices
-            UnityEngine.Debug.Log("[EnemyController] Awake - Manual initialization required");
+            Log("[EnemyController] Awake - Manual initialization required");
         }
 
         /// <summary>
@@ -65,7 +67,7 @@ namespace MOBA
 
             // Initialize
             InitializeEnemy();
-            UnityEngine.Debug.Log("[EnemyController] Manual initialization completed");
+            Log("[EnemyController] Manual initialization completed");
         }
 
         private void InitializeEnemy()
@@ -81,7 +83,7 @@ namespace MOBA
                 meshRenderer.material.color = enemyColor;
             }
 
-            Debug.Log($"[EnemyController] Enemy initialized at {transform.position} with {maxHealth} health");
+            Log($"[EnemyController] Enemy initialized at {transform.position} with {maxHealth} health");
         }
 
         private void Update()
@@ -220,7 +222,7 @@ namespace MOBA
                     if (damageable != null)
                     {
                         damageable.TakeDamage(damage);
-                        Debug.Log($"[EnemyController] Enemy attacked {target.name} for {damage} damage");
+                        Log($"[EnemyController] Enemy attacked {target.name} for {damage} damage");
 
                         // Create attack effect
                         CreateAttackEffect();
@@ -258,7 +260,7 @@ namespace MOBA
             if (isDead) return;
 
             currentHealth -= damage;
-            Debug.Log($"[EnemyController] Enemy took {damage} damage. Health: {currentHealth}/{maxHealth}");
+            Log($"[EnemyController] Enemy took {damage} damage. Health: {currentHealth}/{maxHealth}");
 
             // Create damage effect
             CreateDamageEffect();
@@ -293,7 +295,7 @@ namespace MOBA
         private void Die()
         {
             isDead = true;
-            Debug.Log("[EnemyController] Enemy died!");
+            Log("[EnemyController] Enemy died!");
 
             // Stop movement
             rb.linearVelocity = Vector3.zero;
@@ -352,7 +354,7 @@ namespace MOBA
             
             gameObject.SetActive(true);
             
-            Debug.Log("[EnemyController] Enemy respawned");
+            Log("[EnemyController] Enemy respawned");
         }
 
         private void OnDrawGizmosSelected()
@@ -381,6 +383,14 @@ namespace MOBA
             {
                 Gizmos.color = Color.green;
                 Gizmos.DrawLine(transform.position, originalPosition);
+            }
+        }
+
+        private void Log(string message)
+        {
+            if (logDebugMessages)
+            {
+                Debug.Log(message);
             }
         }
     }

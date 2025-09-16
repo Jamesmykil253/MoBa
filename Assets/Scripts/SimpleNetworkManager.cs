@@ -9,67 +9,108 @@ namespace MOBA.Networking
     public class SimpleNetworkManager : MonoBehaviour
     {
         [Header("Network Settings")]
-        public bool isHost = false;
-        public int maxPlayers = 10;
-        
+        [SerializeField] private bool isHost = false;
+        [SerializeField] private bool autoStart = true;
+
         void Start()
         {
+            if (!autoStart)
+            {
+                return;
+            }
+
+            if (!TryGetNetworkManager(out var manager))
+            {
+                Debug.LogError("[SimpleNetworkManager] Unable to auto-start: NetworkManager.Singleton is null. Add a NetworkManager to the scene or disable autoStart.");
+                return;
+            }
+
             if (isHost)
             {
-                StartHost();
+                StartHost(manager);
             }
             else
             {
-                StartClient();
+                StartClient(manager);
             }
         }
-        
+
         public void StartHost()
         {
-            NetworkManager.Singleton.StartHost();
+            if (!TryGetNetworkManager(out var manager))
+            {
+                Debug.LogError("[SimpleNetworkManager] Cannot start host: NetworkManager.Singleton is null.");
+                return;
+            }
+
+            StartHost(manager);
+        }
+
+        private void StartHost(NetworkManager manager)
+        {
+            manager.StartHost();
             Debug.Log("Started as Host");
         }
-        
+
         public void StartClient()
         {
-            NetworkManager.Singleton.StartClient();
+            if (!TryGetNetworkManager(out var manager))
+            {
+                Debug.LogError("[SimpleNetworkManager] Cannot start client: NetworkManager.Singleton is null.");
+                return;
+            }
+
+            StartClient(manager);
+        }
+
+        private void StartClient(NetworkManager manager)
+        {
+            manager.StartClient();
             Debug.Log("Started as Client");
         }
-        
+
         public void StartServer()
         {
-            NetworkManager.Singleton.StartServer();
+            if (!TryGetNetworkManager(out var manager))
+            {
+                Debug.LogError("[SimpleNetworkManager] Cannot start server: NetworkManager.Singleton is null.");
+                return;
+            }
+
+            manager.StartServer();
             Debug.Log("Started as Server");
         }
-        
+
         public void Disconnect()
         {
-            NetworkManager.Singleton.Shutdown();
+            if (!TryGetNetworkManager(out var manager))
+            {
+                Debug.LogWarning("[SimpleNetworkManager] Disconnect requested but NetworkManager.Singleton is null.");
+                return;
+            }
+
+            manager.Shutdown();
             Debug.Log("Disconnected");
         }
-        
+
         private string GetNetworkMode()
         {
-            if (NetworkManager.Singleton.IsHost) return "Host";
-            if (NetworkManager.Singleton.IsServer) return "Server";
+            if (!TryGetNetworkManager(out var manager))
+            {
+                return "Offline";
+            }
+
+            if (manager.IsHost) return "Host";
+            if (manager.IsServer) return "Server";
             return "Client";
         }
-        
-        void OnGUI()
+
+        private bool TryGetNetworkManager(out NetworkManager manager)
         {
-            if (!NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer)
-            {
-                if (GUILayout.Button("Host")) StartHost();
-                if (GUILayout.Button("Client")) StartClient();
-                if (GUILayout.Button("Server")) StartServer();
-            }
-            else
-            {
-                if (GUILayout.Button("Disconnect")) Disconnect();
-                
-                GUILayout.Label($"Mode: {GetNetworkMode()}");
-                GUILayout.Label($"Connected Players: {NetworkManager.Singleton.ConnectedClientsList.Count}");
-            }
+            manager = NetworkManager.Singleton;
+            return manager != null;
         }
+
+        // UI integration should be wired through Unity UI/UIToolkit; legacy OnGUI debug controls removed.
     }
 }
