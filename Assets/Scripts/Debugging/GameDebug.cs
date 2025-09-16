@@ -14,6 +14,7 @@ namespace MOBA.Debugging
         private static GameDebugSettings cachedSettings;
         private static bool attemptedLoad;
 
+        private static bool useAdvancedFiltering;
         private static GameDebugSettings Settings
         {
             get
@@ -36,6 +37,14 @@ namespace MOBA.Debugging
 
                 return cachedSettings;
             }
+        }
+
+        /// <summary>
+        /// Enables or disables the advanced filtering workflow. When disabled (default) all messages log immediately with a short prefix.
+        /// </summary>
+        public static void UseAdvancedFiltering(bool enable)
+        {
+            useAdvancedFiltering = enable;
         }
 
         /// <summary>
@@ -132,6 +141,11 @@ namespace MOBA.Debugging
 
         private static bool ShouldLog(GameDebugContext context)
         {
+            if (!useAdvancedFiltering)
+            {
+                return true;
+            }
+
             if (!Settings.IsEnabled(context.Category))
             {
                 return false;
@@ -157,6 +171,29 @@ namespace MOBA.Debugging
 
         private static string Format(GameDebugContext context, string message, params (string Key, object Value)[] details)
         {
+            if (!useAdvancedFiltering)
+            {
+                if (details == null || details.Length == 0)
+                {
+                    return $"[{context.Category}] {message}";
+                }
+
+                var simpleBuilder = new StringBuilder();
+                simpleBuilder.Append('[').Append(context.Category).Append("] ").Append(message);
+                simpleBuilder.Append(" | ");
+                for (int i = 0; i < details.Length; i++)
+                {
+                    var (key, value) = details[i];
+                    simpleBuilder.Append(key).Append('=').Append(value ?? "null");
+                    if (i < details.Length - 1)
+                    {
+                        simpleBuilder.Append(", ");
+                    }
+                }
+
+                return simpleBuilder.ToString();
+            }
+
             var builder = new StringBuilder();
             builder.Append('[').Append(context.Category).Append(']');
             builder.Append("[SYS:").Append(context.System).Append(']');

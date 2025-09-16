@@ -1,6 +1,7 @@
 using UnityEngine;
 using Unity.Netcode;
 using System.Collections.Generic;
+using MOBA.Debugging;
 
 namespace MOBA
 {
@@ -49,6 +50,15 @@ namespace MOBA
             {
                 InitializePools();
             }
+        }
+
+        private GameDebugContext BuildContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.General, string subsystem = null)
+        {
+            return new GameDebugContext(
+                GameDebugCategory.GameLifecycle,
+                GameDebugSystemTag.Core,
+                mechanic,
+                subsystem: subsystem ?? nameof(UnitFactory));
         }
 
         private void InitializePools()
@@ -113,7 +123,9 @@ namespace MOBA
 
             if (unit == null)
             {
-                Debug.LogError($"[UnitFactory] Failed to create unit of type {type}");
+                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Spawning),
+                    "Failed to create unit instance.",
+                    ("UnitType", type));
                 return null;
             }
 
@@ -127,14 +139,19 @@ namespace MOBA
                 }
                 else
                 {
-                    Debug.Log($"Created local unit: {type} (not networked)");
+                    GameDebug.Log(BuildContext(GameDebugMechanicTag.Spawning, subsystem: "Local"),
+                        "Created non-networked unit instance.",
+                        ("UnitType", type));
                 }
             }
 
             // Initialize unit-specific components
             InitializeUnitComponents(unit, type);
 
-            Debug.Log($"Created unit: {type} at {position}");
+            GameDebug.Log(BuildContext(GameDebugMechanicTag.Spawning),
+                "Unit created.",
+                ("UnitType", type),
+                ("Position", position));
             return unit;
         }
 
@@ -180,7 +197,10 @@ namespace MOBA
                 {
                     // Pool is at capacity, destroy the unit instead
                     Destroy(unit);
-                    Debug.Log($"[UnitFactory] Pool for {type} at max capacity ({maxPoolSize}), destroying unit");
+                    GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Pooling),
+                        "Pool at capacity; destroying unit.",
+                        ("UnitType", type),
+                        ("MaxPoolSize", maxPoolSize));
                 }
             }
             else
@@ -195,7 +215,8 @@ namespace MOBA
         public void PrewarmPools()
         {
             // Pools are already pre-warmed in InitializePools
-            Debug.Log("[UnitFactory] Pools are pre-warmed during initialization");
+            GameDebug.Log(BuildContext(GameDebugMechanicTag.Pooling),
+                "Pools pre-warmed during initialization.");
         }
 
         /// <summary>

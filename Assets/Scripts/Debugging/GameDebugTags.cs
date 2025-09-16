@@ -45,6 +45,7 @@ namespace MOBA.Debugging
         Cooldown,
         Resource,
         Input,
+        Camera,
         Movement,
         Targeting,
         Validation,
@@ -56,6 +57,8 @@ namespace MOBA.Debugging
         Initialization,
         Configuration,
         Combat,
-        AbilityUse
+        AbilityUse,
+        Score,
+        Jump
     }
 }

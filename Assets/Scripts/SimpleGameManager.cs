@@ -1,4 +1,5 @@
 using UnityEngine;
+using MOBA.Debugging;
 
 namespace MOBA
 {
@@ -7,6 +8,30 @@ namespace MOBA
     /// </summary>
     public class SimpleGameManager : MonoBehaviour
     {
+        public static SimpleGameManager Instance { get; private set; }
+
+        private GameDebugContext BuildContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.General)
+        {
+            return new GameDebugContext(
+                GameDebugCategory.GameLifecycle,
+                GameDebugSystemTag.GameLifecycle,
+                mechanic,
+                subsystem: nameof(SimpleGameManager),
+                actor: gameObject != null ? gameObject.name : null);
+        }
+
+        private void Awake()
+        {
+            if (Instance != null && Instance != this)
+            {
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Configuration),
+                    "Duplicate SimpleGameManager detected. Destroying extra instance.");
+                Destroy(gameObject);
+                return;
+            }
+
+            Instance = this;
+        }
         [Header("Game Settings")]
         public int maxPlayers = 10;
         public float gameTime = 1800f; // 30 minutes
@@ -62,7 +87,8 @@ namespace MOBA
         {
             if (gameActive)
             {
-                Debug.LogWarning("[SimpleGameManager] StartMatch called while a match is already active.");
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Lifecycle),
+                    "StartMatch called while game is already active.");
                 return false;
             }
 
@@ -78,7 +104,8 @@ namespace MOBA
 
             InitializeEnemiesInScene();
 
-            Debug.Log("Game Started!");
+            GameDebug.Log(BuildContext(GameDebugMechanicTag.Lifecycle), "Game match started.",
+                ("Duration", gameTime), ("ScoreToWin", scoreToWin));
             return true;
         }
         // --- Validation for spawns and prefabs ---
@@ -86,20 +113,24 @@ namespace MOBA
         {
             // Player prefab
             if (playerPrefab == null)
-                Debug.LogError("[SimpleGameManager] Player prefab is not assigned!");
+                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
+                    "Player prefab is not assigned.");
             // Enemy prefab
             if (enemyPrefab == null)
-                Debug.LogError("[SimpleGameManager] Enemy prefab is not assigned!");
+                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
+                    "Enemy prefab is not assigned.");
 
             // Player spawn points
             if (playerSpawnPoints == null || playerSpawnPoints.Length == 0)
-                Debug.LogError("[SimpleGameManager] No player spawn points assigned!");
+                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
+                    "No player spawn points assigned.");
             else
             {
                 for (int i = 0; i < playerSpawnPoints.Length; i++)
                 {
                     if (playerSpawnPoints[i] == null)
-                        Debug.LogError($"[SimpleGameManager] Player spawn point {i} is null!");
+                        GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
+                            $"Player spawn point {i} is null.");
                 }
                 // Check for duplicate/overlapping positions
                 for (int i = 0; i < playerSpawnPoints.Length; i++)
@@ -110,7 +141,11 @@ namespace MOBA
                         {
                             float dist = Vector3.Distance(playerSpawnPoints[i].position, playerSpawnPoints[j].position);
                             if (dist < 0.1f)
-                                Debug.LogWarning($"[SimpleGameManager] Player spawn points {i} and {j} are overlapping (distance: {dist})");
+                                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Configuration),
+                                    "Player spawn points overlapping.",
+                                    ("FirstIndex", i),
+                                    ("SecondIndex", j),
+                                    ("Distance", dist));
                         }
                     }
                 }
@@ -118,13 +153,15 @@ namespace MOBA
 
             // Enemy spawn points
             if (enemySpawnPoints == null || enemySpawnPoints.Length == 0)
-                Debug.LogError("[SimpleGameManager] No enemy spawn points assigned!");
+                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
+                    "No enemy spawn points assigned.");
             else
             {
                 for (int i = 0; i < enemySpawnPoints.Length; i++)
                 {
                     if (enemySpawnPoints[i] == null)
-                        Debug.LogError($"[SimpleGameManager] Enemy spawn point {i} is null!");
+                        GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
+                            $"Enemy spawn point {i} is null.");
                 }
                 // Check for duplicate/overlapping positions
                 for (int i = 0; i < enemySpawnPoints.Length; i++)
@@ -135,7 +172,11 @@ namespace MOBA
                         {
                             float dist = Vector3.Distance(enemySpawnPoints[i].position, enemySpawnPoints[j].position);
                             if (dist < 0.1f)
-                                Debug.LogWarning($"[SimpleGameManager] Enemy spawn points {i} and {j} are overlapping (distance: {dist})");
+                                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Configuration),
+                                    "Enemy spawn points overlapping.",
+                                    ("FirstIndex", i),
+                                    ("SecondIndex", j),
+                                    ("Distance", dist));
                         }
                     }
                 }
@@ -171,7 +212,9 @@ namespace MOBA
                     }
                     else
                     {
-                        Debug.LogWarning($"[SimpleGameManager] Spawned enemy prefab {enemyPrefab.name} is missing EnemyController component.");
+                        GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Initialization),
+                            "Spawned enemy prefab missing EnemyController.",
+                            ("Prefab", enemyPrefab.name));
                     }
                 }
             }
@@ -225,32 +268,43 @@ namespace MOBA
         
         public void AddScore(int team, int points = 1)
         {
-            if (!gameActive) {
-                Debug.LogWarning("[SimpleGameManager] Attempted to add score after game ended.");
+            if (!gameActive)
+            {
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Score),
+                    "Attempted to add score after match ended.");
                 return;
             }
             if (team >= 0 && team < teamScores.Length)
             {
                 teamScores[team] += points;
                 OnScoreUpdate?.Invoke(team, teamScores[team]);
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Score),
+                    "Score updated.",
+                    ("Team", team),
+                    ("NewScore", teamScores[team]));
             }
         }
         
         void EndGame(int winningTeam = -1)
         {
-            if (!gameActive) {
-                Debug.LogWarning("[SimpleGameManager] EndGame called but game is already ended.");
+            if (!gameActive)
+            {
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Lifecycle),
+                    "EndGame called but game already inactive.");
                 return;
             }
             gameActive = false;
 
             if (winningTeam >= 0)
             {
-                Debug.Log($"Team {winningTeam + 1} Wins!");
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Score),
+                    "Team won the match.",
+                    ("TeamIndex", winningTeam),
+                    ("Score", teamScores[winningTeam]));
             }
             else
             {
-                Debug.Log("Time's Up! Game Over!");
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Lifecycle), "Match ended due to time limit.");
             }
 
             OnGameEnd?.Invoke(winningTeam);
@@ -278,6 +332,14 @@ namespace MOBA
             if (team >= 0 && team < teamScores.Length)
                 return teamScores[team];
             return 0;
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this)
+            {
+                Instance = null;
+            }
         }
     }
 }

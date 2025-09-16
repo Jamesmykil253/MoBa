@@ -16,6 +16,8 @@ GameObject:
   - component: {fileID: 3065951252804482988}
   - component: {fileID: 7667874800401633655}
   - component: {fileID: 8452662444167271655}
+  - component: {fileID: 6373726723703209727}
+  - component: {fileID: -648450399738026430}
   m_Layer: 0
   m_Name: Player
   m_TagString: Player
@@ -122,7 +124,7 @@ Rigidbody:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2789967931045629425}
   serializedVersion: 4
-  m_Mass: 1
+  m_Mass: 1.65
   m_Drag: 0
   m_AngularDrag: 0.05
   m_CenterOfMass: {x: 0, y: 0, z: 0}
@@ -153,20 +155,31 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d42f15e005d0a47cb8ad05ca7b555afa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  attackCooldown: 0.5
-  maxHealth: 100
-  currentHealth: 100
-  playerId: 0
-  moveSpeed: 8
-  jumpForce: 8
-  damage: 25
-  attackRange: 5
-  inputActions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
-  groundLayerMask:
+  forwardSpeed: 7.5
+  rotationResponsiveness: 14
+  movementBlend: 12
+  gravityScale: 1.1
+  baseJumpHeight: 1
+  highJumpHeight: 1.5
+  doubleJumpHeight: 2
+  apexDoubleJumpHeight: 2.8
+  jumpHoldWindow: 0.18
+  apexVelocityTolerance: 0.35
+  coyoteTime: 0.12
+  jumpBufferTime: 0.1
+  groundProbe: {fileID: 0}
+  probeRadius: 0.3
+  groundLayers:
     serializedVersion: 2
-    m_Bits: 1
-  groundCheckDistance: 1.1
-  groundCheckPoint: {fileID: 0}
+    m_Bits: 8
+  moveActionReference: {fileID: -1680190386980627800, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  jumpActionReference: {fileID: -2099379676528639254, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  fallbackMoveAction: Move
+  fallbackJumpAction: Jump
+  maxHealth: 100
+  autoRespawn: 1
+  respawnDelay: 3
+  respawnPoint: {fileID: 0}
 --- !u!114 &7667874800401633655
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -180,11 +193,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   abilities:
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  inputActions: {fileID: 0}
+  - {fileID: 11400000, guid: c896aea1bedd644be9f536d921481562, type: 2}
+  - {fileID: 11400000, guid: 962c38f1708f3456a9b3b363018e93b0, type: 2}
+  - {fileID: 11400000, guid: 3b345699761ba4dacb31b416d88b42ac, type: 2}
+  inputActions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   abilityActionNames:
   - Ability1
   - Ability2
@@ -205,7 +217,91 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   abilitySystem: {fileID: 7667874800401633655}
   abilityActions:
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
+  - {fileID: -1680190386980627800, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  - {fileID: -2099379676528639254, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  - {fileID: 6666028436246178098, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  - {fileID: 2110184409839349220, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  - {fileID: 6711900876467466333, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  - {fileID: 7476244043514120974, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  - {fileID: -670369809671632794, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  - {fileID: -5630151704836100654, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  - {fileID: 1120369429361536294, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  - {fileID: 1307868796436536932, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  - {fileID: 5792403641477544434, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  - {fileID: 7040659881675835329, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  - {fileID: 1781555164194001046, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  - {fileID: 5792403641477544434, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+--- !u!114 &6373726723703209727
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2789967931045629425}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 62899f850307741f2a39c98a8b639597, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  m_NotificationBehavior: 0
+  m_UIInputModule: {fileID: 0}
+  m_DeviceLostEvent:
+    m_PersistentCalls:
+      m_Calls: []
+  m_DeviceRegainedEvent:
+    m_PersistentCalls:
+      m_Calls: []
+  m_ControlsChangedEvent:
+    m_PersistentCalls:
+      m_Calls: []
+  m_ActionEvents: []
+  m_NeverAutoSwitchControlSchemes: 0
+  m_DefaultControlScheme: 
+  m_DefaultActionMap: Player
+  m_SplitScreenIndex: -1
+  m_Camera: {fileID: 0}
+--- !u!114 &-648450399738026430
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2789967931045629425}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 621567455fd1c4ceb811cc8a00b6a1a5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_NotificationBehavior: 0
+  m_MaxPlayerCount: -1
+  m_AllowJoining: 1
+  m_JoinBehavior: 0
+  m_PlayerJoinedEvent:
+    m_PersistentCalls:
+      m_Calls: []
+  m_PlayerLeftEvent:
+    m_PersistentCalls:
+      m_Calls: []
+  m_JoinAction:
+    m_UseReference: 0
+    m_Action:
+      m_Name: 
+      m_Type: 0
+      m_ExpectedControlType: 
+      m_Id: 29b15e25-15bb-4eab-8ac9-a45464d20185
+      m_Processors: 
+      m_Interactions: 
+      m_SingletonActionBindings: []
+      m_Flags: 0
+    m_Reference: {fileID: 0}
+  m_PlayerPrefab: {fileID: 2789967931045629425}
+  m_SplitScreen: 0
+  m_MaintainAspectRatioInSplitScreen: 0
+  m_FixedNumberOfSplitScreens: -1
+  m_SplitScreenRect:
+    serializedVersion: 2
+    x: 0
+    y: 0
+    width: 1
+    height: 1

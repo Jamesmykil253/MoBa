@@ -3,6 +3,7 @@ using UnityEngine.InputSystem;
 using System.Collections.Generic;
 using System.Collections;
 using MOBA;
+using MOBA.Debugging;
 
 namespace MOBA.Abilities
 {
@@ -69,13 +70,23 @@ namespace MOBA.Abilities
     /// Raised when combat state changes. Listeners MUST unsubscribe to prevent memory leaks.
     /// </summary>
     public System.Action<bool> OnCombatStateChanged; // in combat
-        
+
         // Properties
         public float CurrentMana => currentMana;
         public float MaxMana => maxMana;
         public float ManaPercentage => maxMana > 0 ? currentMana / maxMana : 0f;
         public bool IsInCombat => isInCombat;
         public float CooldownReduction => currentCooldownReduction;
+
+        private GameDebugContext BuildContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.General)
+        {
+            return new GameDebugContext(
+                GameDebugCategory.Ability,
+                GameDebugSystemTag.Ability,
+                mechanic,
+                subsystem: nameof(EnhancedAbilitySystem),
+                actor: gameObject != null ? gameObject.name : null);
+        }
         
         #region Unity Lifecycle
         
@@ -245,7 +256,12 @@ namespace MOBA.Abilities
                     var ability = abilities[abilityIndex];
                     if (!HasMana(ability.manaCost))
                     {
-                        Debug.LogWarning($"[EnhancedAbilitySystem] Not enough mana to cast '{ability.abilityName}'. Required: {ability.manaCost}, Current: {currentMana}");
+                        GameDebug.LogWarning(
+                            BuildContext(GameDebugMechanicTag.Resource),
+                            "Insufficient mana to cast ability.",
+                            ("Ability", ability.abilityName),
+                            ("Required", ability.manaCost),
+                            ("Current", currentMana));
                         // Optionally, trigger a UI event or sound here
                     }
                 }
@@ -285,7 +301,10 @@ namespace MOBA.Abilities
             // Consume mana
             if (!ConsumeMana(ability.manaCost))
             {
-                Debug.LogWarning($"[EnhancedAbilitySystem] Failed to consume mana for '{ability.abilityName}'. Cast aborted.");
+                GameDebug.LogWarning(
+                    BuildContext(GameDebugMechanicTag.Resource),
+                    "Failed to consume mana for ability; aborting cast.",
+                    ("Ability", ability.abilityName));
                 abilityLocked[abilityIndex] = false;
                 yield break;
             }
@@ -314,7 +333,13 @@ namespace MOBA.Abilities
             OnAbilityCast?.Invoke(abilityIndex);
             OnCooldownUpdate?.Invoke(abilityIndex, cooldowns[abilityIndex]);
             
-            Debug.Log($"[EnhancedAbilitySystem] Cast {ability.abilityName} - Damage: {ability.damage}, Range: {ability.range}, Mana: {currentMana}/{maxMana}");
+            GameDebug.Log(
+                BuildContext(GameDebugMechanicTag.AbilityUse),
+                "Ability cast executed.",
+                ("Ability", ability.abilityName),
+                ("Damage", ability.damage),
+                ("Range", ability.range),
+                ("Mana", $"{currentMana}/{maxMana}"));
         }
         
         private void ExecuteAbilityEffect(int abilityIndex, EnhancedAbility ability)
@@ -419,7 +444,10 @@ namespace MOBA.Abilities
         {
             if (abilityIndex < 0 || abilityIndex >= abilities.Length)
             {
-                Debug.LogWarning($"[EnhancedAbilitySystem] GetAbility: Invalid index {abilityIndex}.");
+                GameDebug.LogWarning(
+                    BuildContext(GameDebugMechanicTag.Validation),
+                    "GetAbility called with invalid index.",
+                    ("Index", abilityIndex));
                 return null;
             }
             return abilities[abilityIndex];
@@ -429,7 +457,10 @@ namespace MOBA.Abilities
         {
             if (abilityIndex < 0)
             {
-                Debug.LogWarning($"[EnhancedAbilitySystem] SetAbility: Negative index {abilityIndex}.");
+                GameDebug.LogWarning(
+                    BuildContext(GameDebugMechanicTag.Validation),
+                    "SetAbility called with negative index.",
+                    ("Index", abilityIndex));
                 return;
             }
             // Dynamically resize array if needed
@@ -451,7 +482,10 @@ namespace MOBA.Abilities
         {
             if (abilityIndex < 0 || abilityIndex >= abilities.Length)
             {
-                Debug.LogWarning($"[EnhancedAbilitySystem] RemoveAbility: Invalid index {abilityIndex}.");
+                GameDebug.LogWarning(
+                    BuildContext(GameDebugMechanicTag.Validation),
+                    "RemoveAbility called with invalid index.",
+                    ("Index", abilityIndex));
                 return;
             }
             abilities[abilityIndex] = null;
@@ -551,7 +585,10 @@ namespace MOBA.Abilities
                     var action = inputActions.FindAction(actionName, throwIfNotFound: false);
                     if (action == null)
                     {
-                        Debug.LogWarning($"[EnhancedAbilitySystem] Input action '{actionName}' not found in provided InputActionAsset.");
+                        GameDebug.LogWarning(
+                            BuildContext(GameDebugMechanicTag.Input),
+                            "Input action not found for enhanced ability binding.",
+                            ("Action", actionName));
                         continue;
                     }
 

@@ -1,5 +1,6 @@
 using UnityEngine;
 using Unity.Netcode;
+using MOBA.Debugging;
 
 namespace MOBA.Networking
 {
@@ -12,6 +13,15 @@ namespace MOBA.Networking
         [SerializeField] private bool isHost = false;
         [SerializeField] private bool autoStart = true;
 
+        private GameDebugContext BuildContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.General)
+        {
+            return new GameDebugContext(
+                GameDebugCategory.Networking,
+                GameDebugSystemTag.Networking,
+                mechanic,
+                subsystem: nameof(SimpleNetworkManager));
+        }
+
         void Start()
         {
             if (!autoStart)
@@ -21,7 +31,8 @@ namespace MOBA.Networking
 
             if (!TryGetNetworkManager(out var manager))
             {
-                Debug.LogError("[SimpleNetworkManager] Unable to auto-start: NetworkManager.Singleton is null. Add a NetworkManager to the scene or disable autoStart.");
+                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
+                    "Unable to auto-start; NetworkManager.Singleton is null.");
                 return;
             }
 
@@ -39,7 +50,8 @@ namespace MOBA.Networking
         {
             if (!TryGetNetworkManager(out var manager))
             {
-                Debug.LogError("[SimpleNetworkManager] Cannot start host: NetworkManager.Singleton is null.");
+                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
+                    "Cannot start host; NetworkManager.Singleton is null.");
                 return;
             }
 
@@ -49,14 +61,16 @@ namespace MOBA.Networking
         private void StartHost(NetworkManager manager)
         {
             manager.StartHost();
-            Debug.Log("Started as Host");
+            GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking),
+                "NetworkManager started as host.");
         }
 
         public void StartClient()
         {
             if (!TryGetNetworkManager(out var manager))
             {
-                Debug.LogError("[SimpleNetworkManager] Cannot start client: NetworkManager.Singleton is null.");
+                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
+                    "Cannot start client; NetworkManager.Singleton is null.");
                 return;
             }
 
@@ -66,31 +80,36 @@ namespace MOBA.Networking
         private void StartClient(NetworkManager manager)
         {
             manager.StartClient();
-            Debug.Log("Started as Client");
+            GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking),
+                "NetworkManager started as client.");
         }
 
         public void StartServer()
         {
             if (!TryGetNetworkManager(out var manager))
             {
-                Debug.LogError("[SimpleNetworkManager] Cannot start server: NetworkManager.Singleton is null.");
+                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
+                    "Cannot start server; NetworkManager.Singleton is null.");
                 return;
             }
 
             manager.StartServer();
-            Debug.Log("Started as Server");
+            GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking),
+                "NetworkManager started as server.");
         }
 
         public void Disconnect()
         {
             if (!TryGetNetworkManager(out var manager))
             {
-                Debug.LogWarning("[SimpleNetworkManager] Disconnect requested but NetworkManager.Singleton is null.");
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Networking),
+                    "Disconnect requested but NetworkManager.Singleton is null.");
                 return;
             }
 
             manager.Shutdown();
-            Debug.Log("Disconnected");
+            GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking),
+                "NetworkManager shutdown invoked.");
         }
 
         private string GetNetworkMode()

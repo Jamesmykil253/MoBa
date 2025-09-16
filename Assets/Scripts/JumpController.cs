@@ -1,4 +1,5 @@
 using UnityEngine;
+using MOBA.Debugging;
 
 namespace MOBA
 {
@@ -25,6 +26,15 @@ namespace MOBA
         public event System.Action OnDoubleJumpStarted;
         public event System.Action OnLanded;
 
+        private GameDebugContext BuildContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.Movement)
+        {
+            return new GameDebugContext(
+                GameDebugCategory.Movement,
+                GameDebugSystemTag.Movement,
+                mechanic,
+                subsystem: nameof(JumpController));
+        }
+
         /// <summary>
         /// Initialize jump controller with required components
         /// Defensive programming - validate dependencies
@@ -33,13 +43,15 @@ namespace MOBA
         {
             if (rb == null)
             {
-                Debug.LogError("[JumpController] Rigidbody cannot be null");
+                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Validation),
+                    "JumpController requires a Rigidbody instance.");
                 return;
             }
 
             rigidBody = rb;
             canDoubleJump = true;
-            Debug.Log("[JumpController] Initialized successfully");
+            GameDebug.Log(BuildContext(GameDebugMechanicTag.Initialization),
+                "JumpController initialized successfully.");
         }
 
         /// <summary>
@@ -68,13 +80,17 @@ namespace MOBA
         {
             if (rigidBody == null)
             {
-                Debug.LogWarning("[JumpController] Cannot jump - no rigidbody assigned");
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Validation),
+                    "Cannot execute jump; Rigidbody missing.");
                 return false;
             }
 
             // Primary jump - when grounded
             if (isGrounded)
             {
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Jump),
+                    "Primary jump triggered.",
+                    ("Force", jumpForce));
                 PerformJump(jumpForce);
                 canDoubleJump = allowDoubleJump; // Enable double jump after primary jump
                 OnJumpStarted?.Invoke();
@@ -83,6 +99,9 @@ namespace MOBA
             // Double jump - when airborne and allowed
             else if (canDoubleJump && allowDoubleJump)
             {
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Jump),
+                    "Double jump triggered.",
+                    ("Force", doubleJumpForce));
                 PerformJump(doubleJumpForce);
                 canDoubleJump = false; // Consume double jump
                 OnDoubleJumpStarted?.Invoke();

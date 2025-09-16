@@ -22,5 +22,5 @@ MonoBehaviour:
   respawnTimePerLevel: 2
   targetFrameRate: 60
   enableVSync: 1
-  showDebugUI: 0
+  showDebugUI: 1
   enableCheats: 0

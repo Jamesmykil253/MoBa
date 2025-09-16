@@ -4,6 +4,7 @@ using Unity.Netcode.Transports.UTP;
 using System.Collections.Generic;
 using System.Collections;
 using MOBA;
+using MOBA.Debugging;
 
 // Error codes for network errors
 public enum NetworkErrorCode
@@ -59,6 +60,19 @@ namespace MOBA.Networking
         
         // Network statistics
         private NetworkStats networkStats = new NetworkStats();
+
+        private GameDebugContext BuildContext(
+            GameDebugMechanicTag mechanic = GameDebugMechanicTag.Networking,
+            string subsystem = null,
+            ulong? actorClientId = null)
+        {
+            return new GameDebugContext(
+                GameDebugCategory.Networking,
+                GameDebugSystemTag.Networking,
+                mechanic,
+                subsystem: subsystem ?? nameof(ProductionNetworkManager),
+                actor: actorClientId.HasValue ? $"Client:{actorClientId.Value}" : null);
+        }
         
     // Events
     /// <summary>
@@ -141,7 +155,8 @@ namespace MOBA.Networking
         {
             if (NetworkManager.Singleton == null)
             {
-                Debug.LogError("[ProductionNetworkManager] NetworkManager.Singleton is null!");
+                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
+                    "NetworkManager.Singleton is null; cannot initialize networking.");
                 return;
             }
             
@@ -161,7 +176,8 @@ namespace MOBA.Networking
             
             if (logNetworkEvents)
             {
-                Debug.Log("[ProductionNetworkManager] Network initialization complete");
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Initialization),
+                    "Network initialization complete.");
             }
         }
         
@@ -183,7 +199,10 @@ namespace MOBA.Networking
             else
             {
                 if (logNetworkEvents)
-                    Debug.Log("[ProductionNetworkManager] Starting as Host");
+                {
+                    GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, subsystem: "StartHost"),
+                        "Starting network session as host.");
+                }
             }
         }
         
@@ -201,7 +220,10 @@ namespace MOBA.Networking
             else
             {
                 if (logNetworkEvents)
-                    Debug.Log("[ProductionNetworkManager] Starting as Server");
+                {
+                    GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, subsystem: "StartServer"),
+                        "Starting network session as server.");
+                }
             }
         }
         
@@ -229,7 +251,12 @@ namespace MOBA.Networking
             else
             {
                 if (logNetworkEvents)
-                    Debug.Log($"[ProductionNetworkManager] Connecting to {serverIP}:{serverPort}");
+                {
+                    GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, subsystem: "StartClient"),
+                        "Connecting to server as client.",
+                        ("ServerIP", serverIP),
+                        ("Port", serverPort));
+                }
             }
         }
         
@@ -255,7 +282,10 @@ namespace MOBA.Networking
             {
                 NetworkManager.Singleton.Shutdown();
                 if (logNetworkEvents)
-                    Debug.Log("[ProductionNetworkManager] Disconnected");
+                {
+                    GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, subsystem: "Disconnect"),
+                        "Disconnected from network session.");
+                }
             }
 
             SetConnectionState(NetworkConnectionState.Disconnected);
@@ -271,16 +301,22 @@ namespace MOBA.Networking
             currentPlayerCount = 1; // Host counts as a player
             
             if (logNetworkEvents)
-                Debug.Log("[ProductionNetworkManager] Server started successfully");
+            {
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, subsystem: "ServerLifecycle"),
+                    "Server started successfully.");
+            }
         }
-        
+
         private void OnClientStarted()
         {
             SetConnectionState(NetworkConnectionState.Connected);
             reconnectionAttempts = 0;
             
             if (logNetworkEvents)
-                Debug.Log("[ProductionNetworkManager] Client connected successfully");
+            {
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, subsystem: "ClientLifecycle"),
+                    "Client connected successfully.");
+            }
         }
         
         private void OnClientConnected(ulong clientId)
@@ -305,7 +341,11 @@ namespace MOBA.Networking
             OnPlayerConnected?.Invoke(clientId);
 
             if (logNetworkEvents)
-                Debug.Log($"[ProductionNetworkManager] Player {clientId} connected. Total players: {currentPlayerCount}");
+            {
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, actorClientId: clientId),
+                    "Player connected to session.",
+                    ("ConnectedPlayers", currentPlayerCount));
+            }
 
             // Publish network event
             if (NetworkManager.Singleton.IsServer)
@@ -324,7 +364,11 @@ namespace MOBA.Networking
                 OnPlayerDisconnected?.Invoke(clientId);
                 
                 if (logNetworkEvents)
-                    Debug.Log($"[ProductionNetworkManager] Player {clientId} disconnected. Total players: {currentPlayerCount}");
+                {
+                    GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, actorClientId: clientId),
+                        "Player disconnected from session.",
+                        ("ConnectedPlayers", currentPlayerCount));
+                }
                         
                 // Publish network event
                 if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
@@ -350,7 +394,12 @@ namespace MOBA.Networking
             SetConnectionState(NetworkConnectionState.Reconnecting);
 
             if (logNetworkEvents)
-                Debug.Log($"[ProductionNetworkManager] Attempting reconnection {reconnectionAttempts}/{maxReconnectionAttempts}");
+            {
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Recovery, subsystem: "Reconnection"),
+                    "Attempting reconnection.",
+                    ("Attempt", reconnectionAttempts),
+                    ("MaxAttempts", maxReconnectionAttempts));
+            }
 
             yield return new WaitForSeconds(reconnectionInterval);
 
@@ -466,13 +515,22 @@ namespace MOBA.Networking
             OnNetworkError?.Invoke($"[{code}] {error}");
 
             if (logNetworkEvents)
-                Debug.LogError($"[ProductionNetworkManager] [{code}] {error}");
+            {
+                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Networking, subsystem: "ErrorHandling"),
+                    "Network error encountered.",
+                    ("Code", code),
+                    ("Message", error));
+            }
         }
-        
+
         private void HandleConnectionWarning(string warning)
         {
             if (logNetworkEvents)
-                Debug.LogWarning($"[ProductionNetworkManager] {warning}");
+            {
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Networking, subsystem: "Warning"),
+                    "Network warning issued.",
+                    ("Message", warning));
+            }
         }
         
         #endregion
@@ -487,7 +545,11 @@ namespace MOBA.Networking
                 OnConnectionStateChanged?.Invoke(connectionState);
                 
                 if (logNetworkEvents)
-                    Debug.Log($"[ProductionNetworkManager] Connection state changed to: {connectionState}");
+                {
+                    GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, subsystem: "State"),
+                        "Connection state changed.",
+                        ("State", connectionState));
+                }
             }
         }
         
@@ -522,7 +584,11 @@ namespace MOBA.Networking
             {
                 NetworkManager.Singleton.DisconnectClient(clientId, reason);
                 if (logNetworkEvents)
-                    Debug.Log($"[ProductionNetworkManager] Kicked player {clientId}: {reason}");
+                {
+                    GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, actorClientId: clientId),
+                        "Player kicked from session.",
+                        ("Reason", reason));
+                }
             }
         }
         

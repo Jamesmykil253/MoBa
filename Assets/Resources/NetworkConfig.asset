@@ -27,8 +27,8 @@ MonoBehaviour:
   maxRetransmissions: 3
   pingIntervalMs: 100
   maxPingMs: 500
-  showNetworkStats: 0
-  logNetworkEvents: 0
-  simulateNetworkConditions: 0
+  showNetworkStats: 1
+  logNetworkEvents: 1
+  simulateNetworkConditions: 1
   simulatedLatencyMs: 0
   simulatedPacketLoss: 0

@@ -68,7 +68,7 @@ namespace MOBA.Debugging
         [Serializable]
         private class SubsystemToggle
         {
-            public string name;
+            public string name = string.Empty;
             public bool enabled = true;
         }
 

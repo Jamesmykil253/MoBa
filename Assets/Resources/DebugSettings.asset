@@ -1,0 +1,131 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a208817bd7e8b444a81239f37516e855, type: 3}
+  m_Name: DebugSettings
+  m_EditorClassIdentifier: 
+  logEverything: 1
+  suppressWarnings: 0
+  logGameLifecycle: 1
+  logPlayer: 1
+  logCamera: 1
+  logAbility: 1
+  logEnemy: 1
+  logNetworking: 1
+  logInput: 1
+  logPooling: 1
+  logUI: 1
+  logPerformance: 1
+  logErrorHandling: 1
+  logConfiguration: 1
+  logInitialization: 1
+  logScene: 1
+  logMovement: 1
+  logCombat: 1
+  logHealth: 1
+  logResource: 1
+  logProjectile: 1
+  logAI: 1
+  logAudio: 1
+  logDiagnostics: 1
+  systemToggles:
+  - system: 0
+    enabled: 1
+  - system: 1
+    enabled: 1
+  - system: 2
+    enabled: 1
+  - system: 3
+    enabled: 1
+  - system: 4
+    enabled: 1
+  - system: 5
+    enabled: 1
+  - system: 6
+    enabled: 1
+  - system: 7
+    enabled: 1
+  - system: 8
+    enabled: 1
+  - system: 9
+    enabled: 1
+  - system: 10
+    enabled: 1
+  - system: 11
+    enabled: 1
+  - system: 12
+    enabled: 1
+  - system: 13
+    enabled: 1
+  - system: 14
+    enabled: 1
+  - system: 15
+    enabled: 1
+  - system: 16
+    enabled: 1
+  - system: 17
+    enabled: 1
+  - system: 18
+    enabled: 1
+  - system: 19
+    enabled: 1
+  - system: 20
+    enabled: 1
+  - system: 21
+    enabled: 1
+  mechanicToggles:
+  - mechanic: 0
+    enabled: 1
+  - mechanic: 1
+    enabled: 1
+  - mechanic: 2
+    enabled: 1
+  - mechanic: 3
+    enabled: 1
+  - mechanic: 4
+    enabled: 1
+  - mechanic: 5
+    enabled: 1
+  - mechanic: 6
+    enabled: 1
+  - mechanic: 7
+    enabled: 1
+  - mechanic: 8
+    enabled: 1
+  - mechanic: 9
+    enabled: 1
+  - mechanic: 10
+    enabled: 1
+  - mechanic: 11
+    enabled: 1
+  - mechanic: 12
+    enabled: 1
+  - mechanic: 13
+    enabled: 1
+  - mechanic: 14
+    enabled: 1
+  - mechanic: 15
+    enabled: 1
+  - mechanic: 16
+    enabled: 1
+  - mechanic: 17
+    enabled: 1
+  - mechanic: 18
+    enabled: 1
+  - mechanic: 19
+    enabled: 1
+  - mechanic: 20
+    enabled: 1
+  - mechanic: 21
+    enabled: 1
+  - mechanic: 22
+    enabled: 1
+  subsystemToggles: []

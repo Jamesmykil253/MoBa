@@ -1,4 +1,5 @@
 using UnityEngine;
+using MOBA.Debugging;
 
 namespace MOBA
 {
@@ -24,12 +25,23 @@ namespace MOBA
 
         private ComponentPool<Projectile> projectilePool;
 
+        private GameDebugContext BuildContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.General)
+        {
+            return new GameDebugContext(
+                GameDebugCategory.Projectile,
+                GameDebugSystemTag.Projectile,
+                mechanic,
+                subsystem: nameof(ProjectilePool),
+                actor: gameObject != null ? gameObject.name : null);
+        }
+
         private void Awake()
         {
             // Validate prefab assignment
             if (projectilePrefab == null)
             {
-                Debug.LogError("[ProjectilePool] Projectile prefab is not assigned! Cannot initialize pool.");
+                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
+                    "Projectile prefab not assigned; disabling pool.");
                 enabled = false;
                 return;
             }
@@ -49,17 +61,21 @@ namespace MOBA
                 projectilePool = UnifiedObjectPool.GetComponentPool<Projectile>("ProjectilePool", projectileComponent, initialPoolSize, 100);
                 if (projectilePool != null)
                 {
-                    Debug.Log("[ProjectilePool] ✅ Projectile pool initialized successfully with UnifiedObjectPool");
+                    GameDebug.Log(BuildContext(GameDebugMechanicTag.Initialization),
+                        "Projectile pool initialized via UnifiedObjectPool.",
+                        ("InitialSize", initialPoolSize));
                 }
                 else
                 {
-                    Debug.LogError("[ProjectilePool] ❌ Failed to create projectile pool with UnifiedObjectPool");
+                    GameDebug.LogError(BuildContext(GameDebugMechanicTag.Initialization),
+                        "Failed to create projectile pool via UnifiedObjectPool.");
                     enabled = false;
                 }
             }
             else
             {
-                Debug.LogError("[ProjectilePool] ❌ Failed to initialize projectile pool - Projectile component still missing after fix attempt");
+                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Initialization),
+                    "Projectile component missing on prefab after fix attempt; disabling pool.");
                 enabled = false;
             }
         }
@@ -78,7 +94,8 @@ namespace MOBA
             if (projectilePrefab.GetComponent<Projectile>() == null)
             {
                 projectilePrefab.AddComponent<Projectile>();
-                Debug.Log("[ProjectilePool] Added missing Projectile component");
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Recovery),
+                    "Added missing Projectile component to prefab.");
             }
 
             // Ensure Rigidbody component exists
@@ -88,7 +105,8 @@ namespace MOBA
                 rb = projectilePrefab.AddComponent<Rigidbody>();
                 rb.useGravity = false;
                 rb.constraints = RigidbodyConstraints.FreezeRotation;
-                Debug.Log("[ProjectilePool] Added missing Rigidbody component");
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Recovery),
+                    "Added missing Rigidbody component to projectile prefab.");
             }
 
             // Ensure Collider component exists
@@ -98,7 +116,8 @@ namespace MOBA
                 SphereCollider sphereCollider = projectilePrefab.AddComponent<SphereCollider>();
                 sphereCollider.isTrigger = true;
                 sphereCollider.radius = 0.1f;
-                Debug.Log("[ProjectilePool] Added missing SphereCollider component");
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Recovery),
+                    "Added missing SphereCollider component to projectile prefab.");
             }
             else
             {
@@ -106,7 +125,8 @@ namespace MOBA
                 collider.isTrigger = true;
             }
 
-            Debug.Log("[ProjectilePool] Projectile prefab has been fixed and is ready for use");
+            GameDebug.Log(BuildContext(GameDebugMechanicTag.Recovery),
+                "Projectile prefab dependencies verified.");
         }
 
         /// <summary>
@@ -129,14 +149,20 @@ namespace MOBA
 
             if (missingCount > 0)
             {
-                Debug.LogWarning($"[ProjectilePool] Found {missingCount} missing script references on {obj.name}, attempting to clean...");
-                
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Recovery),
+                    "Missing script references detected; attempting cleanup.",
+                    ("Count", missingCount),
+                    ("Object", obj.name));
+
                 // Use Unity's built-in method to remove missing scripts
                 #if UNITY_EDITOR
                 int removed = UnityEditor.GameObjectUtility.RemoveMonoBehavioursWithMissingScript(obj);
                 if (removed > 0)
                 {
-                    Debug.Log($"[ProjectilePool] ✅ Removed {removed} missing script references from {obj.name}");
+                    GameDebug.Log(BuildContext(GameDebugMechanicTag.Recovery),
+                        "Removed missing script references from projectile prefab.",
+                        ("Removed", removed),
+                        ("Object", obj.name));
                 }
                 #endif
             }
@@ -175,7 +201,8 @@ namespace MOBA
         {
             // UnifiedObjectPool doesn't have ReturnAll method, 
             // but we could implement it or just clear the specific pool
-            Debug.Log("[ProjectilePool] ReturnAll not implemented in UnifiedObjectPool - consider manual cleanup");
+            GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Recovery),
+                "ReturnAll not implemented in UnifiedObjectPool; manual cleanup required.");
         }
 
     }
@@ -198,6 +225,16 @@ namespace MOBA
         private float lifetime;
         private float age;
         private IProjectilePool pool;
+
+        private GameDebugContext BuildContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.General)
+        {
+            return new GameDebugContext(
+                GameDebugCategory.Projectile,
+                GameDebugSystemTag.Projectile,
+                mechanic,
+                subsystem: nameof(Projectile),
+                actor: gameObject != null ? gameObject.name : null);
+        }
 
         private void Update()
         {
@@ -240,7 +277,11 @@ namespace MOBA
                 target.TakeDamage(damage);
 
                 // Simple damage logging instead of complex event system
-                Debug.Log($"Projectile dealt {damage} damage to {other.gameObject.name}");
+                GameDebug.Log(
+                    BuildContext(GameDebugMechanicTag.Combat),
+                    "Projectile dealt damage via trigger collision.",
+                    ("Target", other.gameObject.name),
+                    ("Damage", damage));
 
                 ReturnToPool();
             }
@@ -255,7 +296,11 @@ namespace MOBA
                 target.TakeDamage(damage);
 
                 // Simple damage logging instead of complex event system
-                Debug.Log($"Projectile dealt {damage} damage to {collision.gameObject.name}");
+                GameDebug.Log(
+                    BuildContext(GameDebugMechanicTag.Combat),
+                    "Projectile dealt damage via physics collision.",
+                    ("Target", collision.gameObject.name),
+                    ("Damage", damage));
 
                 ReturnToPool();
             }

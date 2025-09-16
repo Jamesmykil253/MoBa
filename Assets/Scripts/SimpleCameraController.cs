@@ -140,6 +140,9 @@ namespace MOBA
             if (target != null) return true;
 
             TryResolveTarget(false);
+            if (target != null) return true;
+
+            TryResolveTarget(true);
             return target != null;
         }
 

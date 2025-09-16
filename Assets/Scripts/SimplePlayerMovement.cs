@@ -1,4 +1,5 @@
 using UnityEngine;
+using MOBA.Debugging;
 
 namespace MOBA
 {
@@ -37,11 +38,21 @@ namespace MOBA
             
             if (transform == null || rb == null)
             {
-                Debug.LogError("[PlayerMovement] Missing required components");
+                GameDebug.LogError(new GameDebugContext(
+                        GameDebugCategory.Movement,
+                        GameDebugSystemTag.Movement,
+                        GameDebugMechanicTag.Validation,
+                        subsystem: nameof(PlayerMovement)),
+                    "Missing required movement components.");
                 return;
             }
             
-            Debug.Log("[PlayerMovement] Movement system initialized");
+            GameDebug.Log(new GameDebugContext(
+                    GameDebugCategory.Movement,
+                    GameDebugSystemTag.Movement,
+                    GameDebugMechanicTag.Initialization,
+                    subsystem: nameof(PlayerMovement)),
+                "Movement system initialized for player.");
         }
 
         /// <summary>

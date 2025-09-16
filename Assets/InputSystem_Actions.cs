@@ -129,7 +129,7 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
                     ""initialStateCheck"": false
                 },
                 {
-                    ""name"": ""AbilityCancel"",
+                    ""name"": ""Cancel"",
                     ""type"": ""Button"",
                     ""id"": ""74840a7e-3ad4-4da4-8677-f599405391df"",
                     ""expectedControlType"": """",
@@ -204,6 +204,15 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
                     ""name"": ""Ability2"",
                     ""type"": ""Button"",
                     ""id"": ""c247d387-f9c0-4057-9469-6d882dc4863f"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Ability3"",
+                    ""type"": ""Button"",
+                    ""id"": ""8739c9a9-13ae-4a12-a2aa-219d498039b0"",
                     ""expectedControlType"": """",
                     ""processors"": """",
                     ""interactions"": """",
@@ -458,7 +467,7 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
                     ""interactions"": ""MultiTap"",
                     ""processors"": """",
                     ""groups"": "";Gamepad"",
-                    ""action"": ""AbilityCancel"",
+                    ""action"": ""Cancel"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
                 },
@@ -469,14 +478,14 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
                     ""interactions"": """",
                     ""processors"": """",
                     ""groups"": ""XR"",
-                    ""action"": ""AbilityCancel"",
+                    ""action"": ""Cancel"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
                 },
                 {
                     ""name"": """",
                     ""id"": ""cbac6039-9c09-46a1-b5f2-4e5124ccb5ed"",
-                    ""path"": ""<Keyboard>/2"",
+                    ""path"": ""<Keyboard>/1"",
                     ""interactions"": """",
                     ""processors"": """",
                     ""groups"": ""Keyboard&Mouse"",
@@ -668,6 +677,28 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
                     ""processors"": """",
                     ""groups"": "";Keyboard&Mouse"",
                     ""action"": ""Ability2"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""4137227c-0ee4-4b6d-8960-7027870325f0"",
+                    ""path"": ""<Keyboard>/g"",
+                    ""interactions"": ""Hold,Press"",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Ability3"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""224b9a38-da00-471e-87d3-0a985c587cb7"",
+                    ""path"": ""<Gamepad>/leftShoulder"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Keyboard&Mouse"",
+                    ""action"": ""Ability3"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
                 },
@@ -1270,7 +1301,7 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
         m_Player_Aim = m_Player.FindAction("Aim", throwIfNotFound: true);
         m_Player_Attack = m_Player.FindAction("Attack", throwIfNotFound: true);
         m_Player_AttackNPC = m_Player.FindAction("AttackNPC", throwIfNotFound: true);
-        m_Player_AbilityCancel = m_Player.FindAction("AbilityCancel", throwIfNotFound: true);
+        m_Player_Cancel = m_Player.FindAction("Cancel", throwIfNotFound: true);
         m_Player_Score = m_Player.FindAction("Score", throwIfNotFound: true);
         m_Player_Jump = m_Player.FindAction("Jump", throwIfNotFound: true);
         m_Player_AbilitySelect1 = m_Player.FindAction("AbilitySelect1", throwIfNotFound: true);
@@ -1279,6 +1310,7 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
         m_Player_Home = m_Player.FindAction("Home", throwIfNotFound: true);
         m_Player_Ability1 = m_Player.FindAction("Ability1", throwIfNotFound: true);
         m_Player_Ability2 = m_Player.FindAction("Ability2", throwIfNotFound: true);
+        m_Player_Ability3 = m_Player.FindAction("Ability3", throwIfNotFound: true);
         m_Player_Chat = m_Player.FindAction("Chat", throwIfNotFound: true);
         // UI
         m_UI = asset.FindActionMap("UI", throwIfNotFound: true);
@@ -1377,7 +1409,7 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
     private readonly InputAction m_Player_Aim;
     private readonly InputAction m_Player_Attack;
     private readonly InputAction m_Player_AttackNPC;
-    private readonly InputAction m_Player_AbilityCancel;
+    private readonly InputAction m_Player_Cancel;
     private readonly InputAction m_Player_Score;
     private readonly InputAction m_Player_Jump;
     private readonly InputAction m_Player_AbilitySelect1;
@@ -1386,6 +1418,7 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
     private readonly InputAction m_Player_Home;
     private readonly InputAction m_Player_Ability1;
     private readonly InputAction m_Player_Ability2;
+    private readonly InputAction m_Player_Ability3;
     private readonly InputAction m_Player_Chat;
     /// <summary>
     /// Provides access to input actions defined in input action map "Player".
@@ -1415,9 +1448,9 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
         /// </summary>
         public InputAction @AttackNPC => m_Wrapper.m_Player_AttackNPC;
         /// <summary>
-        /// Provides access to the underlying input action "Player/AbilityCancel".
+        /// Provides access to the underlying input action "Player/Cancel".
         /// </summary>
-        public InputAction @AbilityCancel => m_Wrapper.m_Player_AbilityCancel;
+        public InputAction @Cancel => m_Wrapper.m_Player_Cancel;
         /// <summary>
         /// Provides access to the underlying input action "Player/Score".
         /// </summary>
@@ -1450,6 +1483,10 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
         /// Provides access to the underlying input action "Player/Ability2".
         /// </summary>
         public InputAction @Ability2 => m_Wrapper.m_Player_Ability2;
+        /// <summary>
+        /// Provides access to the underlying input action "Player/Ability3".
+        /// </summary>
+        public InputAction @Ability3 => m_Wrapper.m_Player_Ability3;
         /// <summary>
         /// Provides access to the underlying input action "Player/Chat".
         /// </summary>
@@ -1492,9 +1529,9 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
             @AttackNPC.started += instance.OnAttackNPC;
             @AttackNPC.performed += instance.OnAttackNPC;
             @AttackNPC.canceled += instance.OnAttackNPC;
-            @AbilityCancel.started += instance.OnAbilityCancel;
-            @AbilityCancel.performed += instance.OnAbilityCancel;
-            @AbilityCancel.canceled += instance.OnAbilityCancel;
+            @Cancel.started += instance.OnCancel;
+            @Cancel.performed += instance.OnCancel;
+            @Cancel.canceled += instance.OnCancel;
             @Score.started += instance.OnScore;
             @Score.performed += instance.OnScore;
             @Score.canceled += instance.OnScore;
@@ -1519,6 +1556,9 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
             @Ability2.started += instance.OnAbility2;
             @Ability2.performed += instance.OnAbility2;
             @Ability2.canceled += instance.OnAbility2;
+            @Ability3.started += instance.OnAbility3;
+            @Ability3.performed += instance.OnAbility3;
+            @Ability3.canceled += instance.OnAbility3;
             @Chat.started += instance.OnChat;
             @Chat.performed += instance.OnChat;
             @Chat.canceled += instance.OnChat;
@@ -1545,9 +1585,9 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
             @AttackNPC.started -= instance.OnAttackNPC;
             @AttackNPC.performed -= instance.OnAttackNPC;
             @AttackNPC.canceled -= instance.OnAttackNPC;
-            @AbilityCancel.started -= instance.OnAbilityCancel;
-            @AbilityCancel.performed -= instance.OnAbilityCancel;
-            @AbilityCancel.canceled -= instance.OnAbilityCancel;
+            @Cancel.started -= instance.OnCancel;
+            @Cancel.performed -= instance.OnCancel;
+            @Cancel.canceled -= instance.OnCancel;
             @Score.started -= instance.OnScore;
             @Score.performed -= instance.OnScore;
             @Score.canceled -= instance.OnScore;
@@ -1572,6 +1612,9 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
             @Ability2.started -= instance.OnAbility2;
             @Ability2.performed -= instance.OnAbility2;
             @Ability2.canceled -= instance.OnAbility2;
+            @Ability3.started -= instance.OnAbility3;
+            @Ability3.performed -= instance.OnAbility3;
+            @Ability3.canceled -= instance.OnAbility3;
             @Chat.started -= instance.OnChat;
             @Chat.performed -= instance.OnChat;
             @Chat.canceled -= instance.OnChat;
@@ -1904,12 +1947,12 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
         void OnAttackNPC(InputAction.CallbackContext context);
         /// <summary>
-        /// Method invoked when associated input action "AbilityCancel" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// Method invoked when associated input action "Cancel" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
         /// </summary>
         /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
-        void OnAbilityCancel(InputAction.CallbackContext context);
+        void OnCancel(InputAction.CallbackContext context);
         /// <summary>
         /// Method invoked when associated input action "Score" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
         /// </summary>
@@ -1966,6 +2009,13 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
         /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
         void OnAbility2(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "Ability3" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnAbility3(InputAction.CallbackContext context);
         /// <summary>
         /// Method invoked when associated input action "Chat" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
         /// </summary>

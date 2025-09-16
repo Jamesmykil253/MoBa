@@ -118,7 +118,7 @@ Rigidbody:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3065080938929595461}
   serializedVersion: 4
-  m_Mass: 1
+  m_Mass: 24.94
   m_Drag: 0
   m_AngularDrag: 0.05
   m_CenterOfMass: {x: 0, y: 0, z: 0}
@@ -135,7 +135,7 @@ Rigidbody:
   m_UseGravity: 1
   m_IsKinematic: 0
   m_Interpolate: 0
-  m_Constraints: 80
+  m_Constraints: 112
   m_CollisionDetection: 0
 --- !u!114 &6790048383621939991
 MonoBehaviour:
@@ -159,5 +159,10 @@ MonoBehaviour:
   chaseRange: 12
   targetLayerMask:
     serializedVersion: 2
-    m_Bits: 4294967295
+    m_Bits: 64
   enemyColor: {r: 1, g: 0, b: 0, a: 1}
+  coinPrefab: {fileID: 0}
+  coinSpawnPoint: {fileID: 0}
+  coinScoreValue: 10
+  coinLaunchForce: 2
+  logDebugMessages: 1

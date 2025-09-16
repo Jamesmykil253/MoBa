@@ -1,5 +1,6 @@
 using UnityEngine;
 using MOBA.Networking;
+using MOBA.Debugging;
 
 namespace MOBA
 {
@@ -8,6 +9,14 @@ namespace MOBA
     /// </summary>
     public class SimpleSceneSetup : MonoBehaviour
     {
+        private GameDebugContext BuildContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.General)
+        {
+            return new GameDebugContext(
+                GameDebugCategory.Scene,
+                GameDebugSystemTag.Scene,
+                mechanic,
+                subsystem: nameof(SimpleSceneSetup));
+        }
         [Header("Scene Configuration")]
         [SerializeField] private bool includeNetworking = true;
         [SerializeField] private bool includeUI = true;
@@ -46,7 +55,10 @@ namespace MOBA
                 CreateUI();
             }
             
-            Debug.Log("Simple MOBA scene setup complete!");
+            GameDebug.Log(BuildContext(GameDebugMechanicTag.Initialization),
+                "Simple scene setup completed.",
+                ("IncludeNetworking", includeNetworking),
+                ("IncludeUI", includeUI));
         }
 
         void CreateGround()

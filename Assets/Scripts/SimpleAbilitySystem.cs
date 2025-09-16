@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using System.Collections.Generic;
+using MOBA.Debugging;
 
 namespace MOBA
 {
@@ -9,6 +10,15 @@ namespace MOBA
     /// </summary>
     public class SimpleAbilitySystem : MonoBehaviour
     {
+        private GameDebugContext BuildContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.General)
+        {
+            return new GameDebugContext(
+                GameDebugCategory.Ability,
+                GameDebugSystemTag.Ability,
+                mechanic,
+                subsystem: nameof(SimpleAbilitySystem),
+                actor: gameObject != null ? gameObject.name : null);
+        }
         [Header("Abilities")]
         public SimpleAbility[] abilities = new SimpleAbility[4];
 
@@ -103,7 +113,12 @@ namespace MOBA
             cooldowns[abilityIndex] = ability.cooldown;
             lastCastTime = Time.time;
             
-            Debug.Log($"Cast {ability.abilityName} - Damage: {ability.damage}, Range: {ability.range}");
+            GameDebug.Log(
+                BuildContext(GameDebugMechanicTag.AbilityUse),
+                "Ability cast executed.",
+                ("Ability", ability.abilityName),
+                ("Damage", ability.damage),
+                ("Range", ability.range));
         }
         
         public bool IsAbilityReady(int abilityIndex)
@@ -169,7 +184,10 @@ namespace MOBA
                     var action = inputActions.FindAction(actionName, throwIfNotFound: false);
                     if (action == null)
                     {
-                        Debug.LogWarning($"[SimpleAbilitySystem] Input action '{actionName}' not found.");
+                        GameDebug.LogWarning(
+                            BuildContext(GameDebugMechanicTag.Input),
+                            "Input action not found for ability binding.",
+                            ("Action", actionName));
                         continue;
                     }
 

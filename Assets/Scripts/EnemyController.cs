@@ -1,5 +1,6 @@
 using UnityEngine;
 using MOBA.Networking;
+using MOBA.Debugging;
 
 namespace MOBA
 {
@@ -28,6 +29,12 @@ namespace MOBA
         [Header("Visual Settings")]
         [SerializeField] private Color enemyColor = Color.red;
 
+        [Header("Rewards")]
+        [SerializeField] private GameObject coinPrefab;
+        [SerializeField] private Transform coinSpawnPoint;
+        [SerializeField] private int coinScoreValue = 10;
+        [SerializeField] private float coinLaunchForce = 2f;
+
         // Component references
         private Rigidbody rb;
         private Collider col;
@@ -43,12 +50,28 @@ namespace MOBA
         private bool isDead;
 
         [Header("Debug")]
-        [SerializeField] private bool logDebugMessages = false;
+        [SerializeField] private bool logDebugMessages = true;
         private bool isInitialized;
+        private bool isReturning;
+        private Transform lastLoggedTarget;
+
+        private GameDebugContext BuildContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.General)
+        {
+            return new GameDebugContext(
+                GameDebugCategory.Enemy,
+                GameDebugSystemTag.Enemy,
+                mechanic,
+                subsystem: nameof(EnemyController),
+                actor: gameObject != null ? gameObject.name : null);
+        }
 
         private void Awake()
         {
-            Log("[EnemyController] Awake - Manual initialization required");
+            if (!logDebugMessages)
+            {
+                logDebugMessages = true;
+            }
+            Log(GameDebugMechanicTag.Initialization, "Awake called - awaiting manual initialization.");
         }
 
         /// <summary>
@@ -67,7 +90,7 @@ namespace MOBA
 
             // Initialize
             InitializeEnemy();
-            Log("[EnemyController] Manual initialization completed");
+            Log(GameDebugMechanicTag.Initialization, "Manual initialization completed.");
         }
 
         private void InitializeEnemy()
@@ -83,7 +106,10 @@ namespace MOBA
                 meshRenderer.material.color = enemyColor;
             }
 
-            Log($"[EnemyController] Enemy initialized at {transform.position} with {maxHealth} health");
+            Log(GameDebugMechanicTag.Initialization,
+                "Enemy initialized with starting stats.",
+                ("Position", transform.position),
+                ("Health", maxHealth));
         }
 
         private void Update()
@@ -143,6 +169,23 @@ namespace MOBA
                 }
             }
 
+            if (closestTarget != lastLoggedTarget)
+            {
+                if (closestTarget != null)
+                {
+                    Log(GameDebugMechanicTag.Targeting,
+                        "Acquired new target.",
+                        ("Target", closestTarget.name),
+                        ("Distance", closestDistance));
+                }
+                else if (lastLoggedTarget != null)
+                {
+                    Log(GameDebugMechanicTag.Targeting,
+                        "Lost current target.");
+                }
+                lastLoggedTarget = closestTarget;
+            }
+
             target = closestTarget;
         }
 
@@ -150,49 +193,72 @@ namespace MOBA
         {
             if (target == null) return;
 
+            if (!isChasing)
+            {
+                Log(GameDebugMechanicTag.StateChange,
+                    "Entered chase state.",
+                    ("Target", target.name));
+            }
+
             isChasing = true;
-            Vector3 direction = (target.position - transform.position).normalized;
-            direction.y = 0; // Keep on ground
+            isReturning = false;
 
-            // Use faster speed when chasing
-            float currentSpeed = isChasing ? moveSpeed * 1.2f : moveSpeed;
+            Vector3 direction = (target.position - transform.position);
+            direction.y = 0f;
+            direction.Normalize();
 
-            // FIXED: Remove Time.deltaTime from velocity calculation - velocity is already per-second
-            Vector3 currentVelocity = rb.linearVelocity;
-            currentVelocity.x = direction.x * currentSpeed;
-            currentVelocity.z = direction.z * currentSpeed;
-            rb.linearVelocity = currentVelocity;
+            float clampedSpeed = Mathf.Clamp(moveSpeed, 0f, 10f);
+            float currentSpeed = clampedSpeed * 1.1f;
 
-            // Look at target
+            Vector3 desiredVelocity = direction * currentSpeed;
+            desiredVelocity.y = rb.linearVelocity.y;
+
+            rb.linearVelocity = Vector3.Lerp(rb.linearVelocity, desiredVelocity, Time.deltaTime * 5f);
+
             transform.LookAt(new Vector3(target.position.x, transform.position.y, target.position.z));
         }
 
         private void ReturnToOrigin()
         {
             float distanceToOrigin = Vector3.Distance(transform.position, originalPosition);
-            
+
             if (distanceToOrigin > 1f)
             {
-                isChasing = false;
-                Vector3 direction = (originalPosition - transform.position).normalized;
-                direction.y = 0;
+                if (isChasing)
+                {
+                    Log(GameDebugMechanicTag.StateChange,
+                        "Lost target; returning to origin.",
+                        ("Distance", distanceToOrigin));
+                }
 
-                // Use slower speed when returning (not chasing)
-                float returnSpeed = isChasing ? moveSpeed : moveSpeed * 0.5f;
-                // FIXED: Remove Time.deltaTime from velocity calculation
-                Vector3 currentVelocity = rb.linearVelocity;
-                currentVelocity.x = direction.x * returnSpeed;
-                currentVelocity.z = direction.z * returnSpeed;
-                rb.linearVelocity = currentVelocity;
+                isChasing = false;
+                Vector3 direction = (originalPosition - transform.position);
+                direction.y = 0f;
+                direction.Normalize();
+
+                float clampedSpeed = Mathf.Clamp(moveSpeed, 0f, 10f) * 0.7f;
+                Vector3 desiredVelocity = direction * clampedSpeed;
+                desiredVelocity.y = rb.linearVelocity.y;
+
+                rb.linearVelocity = Vector3.Lerp(rb.linearVelocity, desiredVelocity, Time.deltaTime * 4f);
+
+                if (!isReturning)
+                {
+                    Log(GameDebugMechanicTag.StateChange,
+                        "Navigating back to origin.");
+                    isReturning = true;
+                }
             }
             else
             {
-                // Stop moving when close to origin
                 isChasing = false;
-                Vector3 currentVelocity = rb.linearVelocity;
-                currentVelocity.x = 0f;
-                currentVelocity.z = 0f;
-                rb.linearVelocity = currentVelocity;
+                rb.linearVelocity = Vector3.zero;
+                if (isReturning)
+                {
+                    Log(GameDebugMechanicTag.StateChange,
+                        "Reached origin and idling.");
+                    isReturning = false;
+                }
             }
         }
 
@@ -222,7 +288,10 @@ namespace MOBA
                     if (damageable != null)
                     {
                         damageable.TakeDamage(damage);
-                        Log($"[EnemyController] Enemy attacked {target.name} for {damage} damage");
+                        Log(GameDebugMechanicTag.Combat,
+                            "Enemy attack executed.",
+                            ("Target", target.name),
+                            ("Damage", damage));
 
                         // Create attack effect
                         CreateAttackEffect();
@@ -260,7 +329,11 @@ namespace MOBA
             if (isDead) return;
 
             currentHealth -= damage;
-            Log($"[EnemyController] Enemy took {damage} damage. Health: {currentHealth}/{maxHealth}");
+            Log(GameDebugMechanicTag.Damage,
+                "Enemy took damage.",
+                ("Damage", damage),
+                ("CurrentHealth", currentHealth),
+                ("MaxHealth", maxHealth));
 
             // Create damage effect
             CreateDamageEffect();
@@ -268,6 +341,12 @@ namespace MOBA
             if (currentHealth <= 0)
             {
                 Die();
+            }
+            else if (currentHealth <= maxHealth * 0.25f)
+            {
+                Log(GameDebugMechanicTag.StateChange,
+                    "Enemy health critical.",
+                    ("CurrentHealth", currentHealth));
             }
         }
 
@@ -295,7 +374,7 @@ namespace MOBA
         private void Die()
         {
             isDead = true;
-            Log("[EnemyController] Enemy died!");
+            Log(GameDebugMechanicTag.StateChange, "Enemy died and will trigger death effects.");
 
             // Stop movement
             rb.linearVelocity = Vector3.zero;
@@ -303,8 +382,36 @@ namespace MOBA
             // Create death effect
             CreateDeathEffect();
 
+            SpawnCoinReward();
+
             // Disable enemy after short delay
             Invoke(nameof(DisableEnemy), 2f);
+        }
+
+        private void SpawnCoinReward()
+        {
+            if (coinPrefab == null)
+            {
+                return;
+            }
+
+            Vector3 spawnPosition = coinSpawnPoint != null ? coinSpawnPoint.position : transform.position + Vector3.up * 0.5f;
+            var coinInstance = Instantiate(coinPrefab, spawnPosition, Quaternion.identity);
+
+            if (coinInstance.TryGetComponent<Rigidbody>(out var coinRb))
+            {
+                Vector3 launchDirection = Vector3.up + Random.insideUnitSphere * 0.25f;
+                coinRb.AddForce(launchDirection.normalized * Mathf.Max(0f, coinLaunchForce), ForceMode.Impulse);
+            }
+
+            if (coinInstance.TryGetComponent<CoinPickup>(out var coinPickup))
+            {
+                coinPickup.Initialize(Mathf.Max(1, coinScoreValue));
+            }
+
+            Log(GameDebugMechanicTag.Score,
+                "Dropped coin reward.",
+                ("ScoreValue", coinScoreValue));
         }
 
         private void CreateDeathEffect()
@@ -354,7 +461,7 @@ namespace MOBA
             
             gameObject.SetActive(true);
             
-            Log("[EnemyController] Enemy respawned");
+            Log(GameDebugMechanicTag.Spawning, "Enemy respawned with reset state.");
         }
 
         private void OnDrawGizmosSelected()
@@ -386,12 +493,14 @@ namespace MOBA
             }
         }
 
-        private void Log(string message)
+        private void Log(GameDebugMechanicTag mechanic, string message, params (string Key, object Value)[] details)
         {
-            if (logDebugMessages)
+            if (!logDebugMessages)
             {
-                Debug.Log(message);
+                return;
             }
+
+            GameDebug.Log(BuildContext(mechanic), message, details);
         }
     }
 }

@@ -43,7 +43,7 @@
                     "initialStateCheck": false
                 },
                 {
-                    "name": "AbilityCancel",
+                    "name": "Cancel",
                     "type": "Button",
                     "id": "74840a7e-3ad4-4da4-8677-f599405391df",
                     "expectedControlType": "",
@@ -118,6 +118,15 @@
                     "name": "Ability2",
                     "type": "Button",
                     "id": "c247d387-f9c0-4057-9469-6d882dc4863f",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "Ability3",
+                    "type": "Button",
+                    "id": "8739c9a9-13ae-4a12-a2aa-219d498039b0",
                     "expectedControlType": "",
                     "processors": "",
                     "interactions": "",
@@ -372,7 +381,7 @@
                     "interactions": "MultiTap",
                     "processors": "",
                     "groups": ";Gamepad",
-                    "action": "AbilityCancel",
+                    "action": "Cancel",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },
@@ -383,14 +392,14 @@
                     "interactions": "",
                     "processors": "",
                     "groups": "XR",
-                    "action": "AbilityCancel",
+                    "action": "Cancel",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },
                 {
                     "name": "",
                     "id": "cbac6039-9c09-46a1-b5f2-4e5124ccb5ed",
-                    "path": "<Keyboard>/2",
+                    "path": "<Keyboard>/1",
                     "interactions": "",
                     "processors": "",
                     "groups": "Keyboard&Mouse",
@@ -582,6 +591,28 @@
                     "processors": "",
                     "groups": ";Keyboard&Mouse",
                     "action": "Ability2",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "4137227c-0ee4-4b6d-8960-7027870325f0",
+                    "path": "<Keyboard>/g",
+                    "interactions": "Hold,Press",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Ability3",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "224b9a38-da00-471e-87d3-0a985c587cb7",
+                    "path": "<Gamepad>/leftShoulder",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": ";Keyboard&Mouse",
+                    "action": "Ability3",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },

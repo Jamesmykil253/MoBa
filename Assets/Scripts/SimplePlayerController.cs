@@ -1,536 +1,481 @@
+using System;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using MOBA.Networking;
-using System.Collections;
-using System.Collections.Generic;
-using MOBA.Configuration;
 using MOBA.Abilities;
 
 namespace MOBA
 {
     /// <summary>
-    /// Simple player controller - updated with modern Unity 6000+ Input System
-    /// Uses standardized config access via MasterConfig.Instance.playerConfig
+    /// Fully rebuilt player controller that leverages modern physics and Input System APIs.
+    /// Implements continuous forward locomotion, advanced jump logic, and minimal combat hooks.
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
+    [RequireComponent(typeof(PlayerInput))]
     public class SimplePlayerController : MonoBehaviour, IDamageable
     {
-    // Access PlayerConfig via MasterConfig.Instance.playerConfig
-        private bool isInvulnerable = false;
-        // Slope and platform detection
-        private Vector3 groundNormal = Vector3.up;
-        private Transform currentPlatform = null;
-        [Header("Combat Cooldown")]
-        [SerializeField] private float attackCooldown = 0.5f;
-        private float lastAttackTime = -999f;
-    [Header("Player Stats")]
-    /// <summary>
-    /// Maximum health for the player.
-    /// </summary>
-    public float maxHealth = 100f;
-    /// <summary>
-    /// Current health for the player.
-    /// </summary>
-    public float currentHealth = 100f;
-    /// <summary>
-    /// Unique player identifier.
-    /// </summary>
-    public int playerId;
+        [Header("Movement")]
+        [SerializeField] private float forwardSpeed = 7.5f;
+        [SerializeField] private float rotationResponsiveness = 14f;
+        [SerializeField] private float movementBlend = 12f;
+        [SerializeField] private float gravityScale = 1.1f;
 
-    [Header("Movement")]
-    /// <summary>
-    /// Movement speed of the player.
-    /// </summary>
-    public float moveSpeed = 8f;
-    /// <summary>
-    /// Jump force applied to the player.
-    /// </summary>
-    public float jumpForce = 8f;
-    [SerializeField] private bool allowDoubleJump = true;
-    [SerializeField, Tooltip("Number of jumps available while airborne.")]
-    private int maxAirJumps = 1;
+        [Header("Jump Heights (meters)")]
+        [SerializeField] private float baseJumpHeight = 1.0f;
+        [SerializeField] private float highJumpHeight = 1.5f;
+        [SerializeField] private float doubleJumpHeight = 2.0f;
+        [SerializeField] private float apexDoubleJumpHeight = 2.8f;
 
-    [Header("Combat")]
-    /// <summary>
-    /// Damage dealt by the player.
-    /// </summary>
-    public float damage = 25f;
-    /// <summary>
-    /// Attack range for the player.
-    /// </summary>
-    public float attackRange = 5f;
-
-        [Header("Input System")]
-        [SerializeField] private InputActionAsset inputActions;
+        [Header("Jump Timing")]
+        [SerializeField] private float jumpHoldWindow = 0.18f;
+        [SerializeField] private float apexVelocityTolerance = 0.35f;
+        [SerializeField] private float coyoteTime = 0.12f;
+        [SerializeField] private float jumpBufferTime = 0.1f;
 
         [Header("Ground Detection")]
-        [SerializeField] private LayerMask groundLayerMask = 1;
-        [SerializeField] private float groundCheckDistance = 1.1f;
-        [SerializeField] private Transform groundCheckPoint;
+        [SerializeField] private Transform groundProbe;
+        [SerializeField] private float probeRadius = 0.3f;
+        [SerializeField] private LayerMask groundLayers = ~0;
 
-        // Components
-        private Rigidbody rb;
-        private Collider playerCollider;
-        private Renderer[] cachedRenderers;
-        private Dictionary<Renderer, bool> rendererDefaultStates;
-        private Vector3 moveInput;
-        private bool isGrounded;
-        private bool canControl = true;
-        private bool isAlive = true;
-        private int remainingAirJumps = 0;
+        [Header("Input Actions")]
+        [SerializeField] private InputActionReference moveActionReference;
+        [SerializeField] private InputActionReference jumpActionReference;
+        [SerializeField] private string fallbackMoveAction = "Move";
+        [SerializeField] private string fallbackJumpAction = "Jump";
 
-        // Input Actions
+        [Header("Health & Respawn")]
+        [SerializeField] private float maxHealth = 100f;
+        [SerializeField] private bool autoRespawn = true;
+        [SerializeField] private float respawnDelay = 3f;
+        [SerializeField] private Transform respawnPoint;
+
+        private Rigidbody body;
+        private PlayerInput playerInput;
+        private EnhancedAbilitySystem enhancedAbilitySystem;
+
         private InputAction moveAction;
         private InputAction jumpAction;
-        private InputAction attackAction;
 
-        private PlayerConfig runtimePlayerConfig;
-        private EnhancedAbilitySystem abilitySystem;
+        private Vector2 moveInput;
+        private Vector3 desiredLook = Vector3.forward;
+        private Vector3 defaultLookDirection = Vector3.forward;
+        private bool inputActive = true;
 
-    // Events
-    /// <summary>
-    /// Raised when health changes. Listeners MUST unsubscribe to prevent memory leaks.
-    /// </summary>
-    public System.Action<float> OnHealthChanged;
-    /// <summary>
-    /// Raised when the player dies. Listeners MUST unsubscribe to prevent memory leaks.
-    /// </summary>
-    public System.Action OnDeath;
+        private bool isGrounded;
+        private float lastGroundedTime;
+        private bool jumpHeld;
+        private bool jumpQueued;
+        private float lastJumpRequestTime;
+        private bool canDoubleJump;
+        private bool jumpHoldActive;
+        private float jumpStartedTime;
+        private bool lastJumpReachedHigh;
 
-        void Awake()
+        private float holdBoostRate;
+
+        private float currentHealth;
+        private bool isDead;
+        private Vector3 initialSpawnPosition;
+        private Coroutine respawnRoutine;
+
+        private float yawVelocity;
+
+        public event Action<float, float> HealthChanged;
+        public event Action Died;
+
+        public float CurrentHealth => currentHealth;
+        public float MaxHealth => maxHealth;
+
+        private void Awake()
         {
-            // Cache component references for performance - modern Unity best practice
-            rb = GetComponent<Rigidbody>();
-            playerCollider = GetComponent<Collider>();
-            abilitySystem = GetComponent<EnhancedAbilitySystem>();
-            
-            // Validate required components
-            if (rb == null)
-            {
-                Debug.LogError($"[SimplePlayerController] Missing Rigidbody component on {gameObject.name}");
-            }
-            
-            if (playerCollider == null)
-            {
-                Debug.LogError($"[SimplePlayerController] Missing Collider component on {gameObject.name}");
-            }
-            
-            // Auto-create ground check point if not assigned
-            if (groundCheckPoint == null)
-            {
-                GameObject groundCheck = new GameObject("GroundCheck");
-                groundCheck.transform.SetParent(transform);
-                groundCheck.transform.localPosition = Vector3.down * (playerCollider ? playerCollider.bounds.extents.y : 1f);
-                groundCheckPoint = groundCheck.transform;
-            }
-            
-            // Initialize Input System - Modern Unity 6000+ approach
-            if (inputActions == null)
-            {
-                // Fallback to finding existing Input Actions asset
-                inputActions = FindFirstObjectByType<PlayerInput>()?.actions;
-            }
-            
-            if (inputActions != null)
-            {
-                moveAction = inputActions.FindAction("Move");
-                jumpAction = inputActions.FindAction("Jump");
-                attackAction = inputActions.FindAction("Attack");
-            }
+            body = GetComponent<Rigidbody>();
+            playerInput = GetComponent<PlayerInput>();
+            enhancedAbilitySystem = GetComponent<EnhancedAbilitySystem>();
 
-            cachedRenderers = GetComponentsInChildren<Renderer>(true);
-            rendererDefaultStates = new Dictionary<Renderer, bool>(cachedRenderers.Length);
-            foreach (var renderer in cachedRenderers)
-            {
-                if (renderer != null && !rendererDefaultStates.ContainsKey(renderer))
-                {
-                    rendererDefaultStates[renderer] = renderer.enabled;
-                }
-            }
+            ConfigureRigidBody();
+            EnsureGroundProbe();
 
-            var masterConfig = MasterConfig.Instance;
-            runtimePlayerConfig = masterConfig != null ? masterConfig.playerConfig : null;
-            ApplyPlayerConfig();
-        }
+            initialSpawnPosition = transform.position;
+            defaultLookDirection = transform.forward.sqrMagnitude > 0.01f
+                ? transform.forward.normalized
+                : Vector3.forward;
+            desiredLook = defaultLookDirection;
 
-        void Start()
-        {
             currentHealth = maxHealth;
-            canControl = true;
-            isAlive = true;
-            abilitySystem?.SetInputEnabled(true);
-            EnsureCameraFollowsPlayer();
-            remainingAirJumps = allowDoubleJump ? Mathf.Max(0, maxAirJumps) : 0;
-            
-            // Enable input actions if available
-            if (isAlive && canControl)
+            holdBoostRate = Mathf.Max(0.01f, CalculateJumpVelocity(highJumpHeight) - CalculateJumpVelocity(baseJumpHeight)) /
+                             Mathf.Max(0.01f, jumpHoldWindow);
+        }
+
+        private void OnEnable()
+        {
+            ResolveInputActions();
+            SetInputEnabled(true);
+        }
+
+        private void OnDisable()
+        {
+            TeardownInputActions();
+        }
+
+        private void Update()
+        {
+            if (isDead || !inputActive)
             {
-                moveAction?.Enable();
-                jumpAction?.Enable();
-                attackAction?.Enable();
+                moveInput = Vector2.zero;
+                return;
+            }
+
+            if (moveAction != null)
+            {
+                moveInput = moveAction.ReadValue<Vector2>();
+            }
+
+            UpdateDesiredOrientation();
+        }
+
+        private void FixedUpdate()
+        {
+            ApplyGroundCheck();
+            HandleJumpBuffer();
+            ApplyJumpHoldBoost();
+            ApplyForwardMotion();
+            ApplyAdditionalGravity();
+        }
+
+        private void ConfigureRigidBody()
+        {
+            body.interpolation = RigidbodyInterpolation.Interpolate;
+            body.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+        }
+
+        private void EnsureGroundProbe()
+        {
+            if (groundProbe == null)
+            {
+                GameObject probe = new GameObject("GroundProbe");
+                probe.transform.SetParent(transform);
+                probe.transform.localPosition = Vector3.down * 0.9f;
+                groundProbe = probe.transform;
             }
         }
 
-        void OnEnable()
+        private void ResolveInputActions()
         {
-            // Enable actions when object becomes active
-            if (isAlive && canControl)
+            if (playerInput == null)
             {
-                moveAction?.Enable();
-                jumpAction?.Enable();
-                attackAction?.Enable();
-                abilitySystem?.SetInputEnabled(true);
+                return;
+            }
+
+            if (moveActionReference != null)
+            {
+                moveAction = moveActionReference.action;
+            }
+            else if (playerInput.actions != null)
+            {
+                moveAction = playerInput.actions.FindAction(fallbackMoveAction, throwIfNotFound: false);
+            }
+
+            if (jumpActionReference != null)
+            {
+                jumpAction = jumpActionReference.action;
+            }
+            else if (playerInput.actions != null)
+            {
+                jumpAction = playerInput.actions.FindAction(fallbackJumpAction, throwIfNotFound: false);
+            }
+
+            if (moveAction != null)
+            {
+                moveAction.Enable();
+            }
+
+            if (jumpAction != null)
+            {
+                jumpAction.Enable();
+                jumpAction.started += OnJumpStarted;
+                jumpAction.canceled += OnJumpCanceled;
             }
         }
 
-        void OnDisable()
+        private void TeardownInputActions()
         {
-            // Clean up input actions when disabled
-            moveAction?.Disable();
-            jumpAction?.Disable();
-            attackAction?.Disable();
-            abilitySystem?.SetInputEnabled(false);
-        }
-
-        void OnDestroy()
-        {
-            // Properly dispose of input actions to prevent memory leaks
-            moveAction?.Disable();
-            jumpAction?.Disable();
-            attackAction?.Disable();
-            
-            // Unsubscribe from any events to prevent memory leaks
-            OnHealthChanged = null;
-            OnDeath = null;
-            
-            // Clean up event system subscriptions if any were made
-            // (This would be added if the controller subscribes to events)
-        }
-
-        void Update()
-        {
-            if (!canControl || !isAlive) return;
-            HandleInput();
-        }
-
-        void FixedUpdate()
-        {
-            // Use FixedUpdate for physics-based movement
-            CheckGrounded();
-            if (!canControl || !isAlive) return;
-            Move();
-        }
-
-        /// <summary>
-        /// Modern ground detection using Physics.CheckSphere for reliability
-        /// </summary>
-        void CheckGrounded()
-        {
-            if (groundCheckPoint == null) return;
-
-            // Sphere check for basic ground contact
-            isGrounded = Physics.CheckSphere(
-                groundCheckPoint.position,
-                groundCheckDistance,
-                groundLayerMask,
-                QueryTriggerInteraction.Ignore
-            );
-
-            // Raycast for slope and platform detection
-            RaycastHit hit;
-            if (Physics.Raycast(transform.position, Vector3.down, out hit, groundCheckDistance + 0.2f, groundLayerMask, QueryTriggerInteraction.Ignore))
+            if (jumpAction != null)
             {
-                groundNormal = hit.normal;
-                isGrounded = true;
-                // Detect moving platform
-                if (hit.collider.attachedRigidbody != null && !hit.collider.attachedRigidbody.isKinematic)
-                {
-                    currentPlatform = hit.collider.transform;
-                }
-                else
-                {
-                    currentPlatform = null;
-                }
+                jumpAction.started -= OnJumpStarted;
+                jumpAction.canceled -= OnJumpCanceled;
+                jumpAction.Disable();
+            }
+
+            if (moveAction != null)
+            {
+                moveAction.Disable();
+            }
+        }
+
+        private void OnJumpStarted(InputAction.CallbackContext context)
+        {
+            if (!inputActive || isDead)
+            {
+                return;
+            }
+
+            jumpHeld = true;
+            jumpQueued = true;
+            lastJumpRequestTime = Time.time;
+        }
+
+        private void OnJumpCanceled(InputAction.CallbackContext context)
+        {
+            jumpHeld = false;
+            jumpHoldActive = false;
+        }
+
+        private void UpdateDesiredOrientation()
+        {
+            Vector3 inputDirection = new Vector3(moveInput.x, 0f, moveInput.y);
+            if (inputDirection.sqrMagnitude > 0.0001f)
+            {
+                desiredLook = inputDirection.normalized;
             }
             else
             {
-                groundNormal = Vector3.up;
-                currentPlatform = null;
+                desiredLook = Vector3.Slerp(desiredLook, defaultLookDirection, rotationResponsiveness * Time.deltaTime);
             }
+
+            float targetYaw = Mathf.Atan2(desiredLook.x, desiredLook.z) * Mathf.Rad2Deg;
+            float smoothedYaw = Mathf.SmoothDampAngle(transform.eulerAngles.y, targetYaw, ref yawVelocity, 1f / rotationResponsiveness);
+            Quaternion nextRotation = Quaternion.Euler(0f, smoothedYaw, 0f);
+            body.MoveRotation(nextRotation);
+        }
+
+        private void ApplyForwardMotion()
+        {
+            if (isDead)
+            {
+                Vector3 haltedVelocity = body.linearVelocity;
+                haltedVelocity.x = 0f;
+                haltedVelocity.z = 0f;
+                body.linearVelocity = haltedVelocity;
+                return;
+            }
+
+            Vector3 desiredVelocity = transform.forward * forwardSpeed;
+            Vector3 current = body.linearVelocity;
+            desiredVelocity.y = current.y;
+            Vector3 blended = Vector3.Lerp(current, desiredVelocity, movementBlend * Time.fixedDeltaTime);
+            body.linearVelocity = blended;
+        }
+
+        private void ApplyGroundCheck()
+        {
+            bool wasGrounded = isGrounded;
+            Vector3 probePosition = groundProbe != null ? groundProbe.position : transform.position + Vector3.down * 0.9f;
+            isGrounded = Physics.CheckSphere(probePosition, probeRadius, groundLayers, QueryTriggerInteraction.Ignore);
 
             if (isGrounded)
             {
-                remainingAirJumps = allowDoubleJump ? Mathf.Max(0, maxAirJumps) : 0;
-            }
-        }
-
-        void HandleInput()
-        {
-            if (!canControl) return;
-            // Modern Input System approach only
-            if (moveAction != null)
-            {
-                Vector2 inputVector = moveAction.ReadValue<Vector2>();
-                moveInput = new Vector3(inputVector.x, 0, inputVector.y);
-            }
-
-            // Jump with modern Input System
-            if (jumpAction != null && jumpAction.WasPressedThisFrame())
-            {
-                if (isGrounded)
+                lastGroundedTime = Time.time;
+                canDoubleJump = true;
+                jumpHoldActive = false;
+                if (!wasGrounded)
                 {
-                    Jump();
-                }
-                else if (allowDoubleJump && remainingAirJumps > 0)
-                {
-                    AirJump();
+                    lastJumpReachedHigh = false;
                 }
             }
+        }
 
-            // Attack with modern Input System
-            if (attackAction != null && attackAction.WasPressedThisFrame())
+        private void HandleJumpBuffer()
+        {
+            if (!jumpQueued)
             {
-                Attack();
-            }
-        }
-
-        void Move()
-        {
-            // Modern physics-based movement instead of Transform.Translate
-            if (rb == null) return;
-
-            // Calculate movement direction relative to world space
-            Vector3 movement = moveInput.normalized * moveSpeed;
-
-            // Preserve Y velocity for gravity and jumping
-            Vector3 currentVelocity = rb.linearVelocity;
-            Vector3 targetVelocity = new Vector3(movement.x, currentVelocity.y, movement.z);
-
-            // Apply movement using physics system for proper collision detection
-            rb.linearVelocity = targetVelocity;
-        }
-
-        void Jump()
-        {
-            if (rb == null) return;
-            Vector3 velocity = rb.linearVelocity;
-            velocity.y = 0f;
-            rb.linearVelocity = velocity;
-            rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
-        }
-
-        void AirJump()
-        {
-            if (rb == null) return;
-            remainingAirJumps = Mathf.Max(remainingAirJumps - 1, 0);
-            Vector3 velocity = rb.linearVelocity;
-            velocity.y = 0f;
-            rb.linearVelocity = velocity;
-            rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
-        }
-
-        void Attack()
-        {
-            if (!canControl || !isAlive) return;
-            // Attack cooldown check
-            if (Time.time < lastAttackTime + attackCooldown)
                 return;
-
-            Collider[] enemies = Physics.OverlapSphere(transform.position, attackRange);
-            foreach (var enemy in enemies)
-            {
-                if (enemy.CompareTag("Enemy"))
-                {
-                    // Line-of-sight check: raycast from player to enemy, ignore self
-                    Vector3 direction = (enemy.transform.position - transform.position).normalized;
-                    float distance = Vector3.Distance(transform.position, enemy.transform.position);
-                    if (!Physics.Raycast(transform.position, direction, distance, ~LayerMask.GetMask("Player")))
-                    {
-                        if (enemy.TryGetComponent<IDamageable>(out var damageable))
-                        {
-                            damageable.TakeDamage(damage);
-                        }
-                    }
-                }
             }
-            lastAttackTime = Time.time;
-        }
 
-        public void TakeDamage(float damageAmount)
-    /// <summary>
-    /// Applies damage to the player. Triggers OnHealthChanged and OnDeath if health reaches zero.
-    /// </summary>
-        {
-            if (isInvulnerable) return;
-            currentHealth -= damageAmount;
-            OnHealthChanged?.Invoke(currentHealth);
-            if (currentHealth <= 0)
+            bool canUseGroundJump = isGrounded || Time.time <= lastGroundedTime + coyoteTime;
+            bool bufferedExpired = Time.time > lastJumpRequestTime + jumpBufferTime;
+
+            if (canUseGroundJump)
             {
-                Die();
-            }
-        }
-
-        public float GetHealth()
-    /// <summary>
-    /// Returns the current health value.
-    /// </summary>
-        {
-            return currentHealth;
-        }
-
-        public bool IsDead()
-    /// <summary>
-    /// Returns true if the player is dead (health &lt;= 0).
-    /// </summary>
-        {
-            return currentHealth <= 0;
-        }
-
-        void Die()
-        {
-            if (!canControl || !isAlive)
+                ExecuteGroundJump();
                 return;
-            canControl = false;
-            isAlive = false;
-            abilitySystem?.SetInputEnabled(false);
-            OnDeath?.Invoke();
-            // Start respawn coroutine
-            StartCoroutine(RespawnCoroutine());
-        }
+            }
 
-        private System.Collections.IEnumerator RespawnCoroutine()
-        {
-            // Optionally disable input or visuals here
-            SetPlayerActiveState(false);
-            var config = runtimePlayerConfig ?? (MasterConfig.Instance != null ? MasterConfig.Instance.playerConfig : null);
-            float delay = config != null ? config.respawnDelay : 3f;
-            Vector3 respawnPos = config != null ? config.respawnPosition : Vector3.zero;
-            yield return new WaitForSeconds(delay);
-            // Respawn
-            currentHealth = maxHealth;
-            transform.position = respawnPos;
-            isAlive = true;
-            canControl = true;
-            SetPlayerActiveState(true);
-            StartCoroutine(InvulnerabilityCoroutine(2f)); // 2 seconds of invulnerability
-        }
-
-        private System.Collections.IEnumerator InvulnerabilityCoroutine(float duration)
-        {
-            isInvulnerable = true;
-            // Optionally add visual feedback here
-            yield return new WaitForSeconds(duration);
-            isInvulnerable = false;
-        }
-
-        void OnDrawGizmos()
-        {
-            // Show attack range
-            Gizmos.color = Color.red;
-            Gizmos.DrawWireSphere(transform.position, attackRange);
-            
-            // Show ground check
-            if (groundCheckPoint != null)
+            if (!isGrounded && canDoubleJump)
             {
-                Gizmos.color = isGrounded ? Color.green : Color.yellow;
-                Gizmos.DrawWireSphere(groundCheckPoint.position, groundCheckDistance);
+                ExecuteDoubleJump();
+                return;
+            }
+
+            if (bufferedExpired)
+            {
+                jumpQueued = false;
             }
         }
 
-        private void SetPlayerActiveState(bool active)
+        private void ExecuteGroundJump()
         {
-            if (!active)
+            jumpQueued = false;
+            canDoubleJump = true;
+            jumpHoldActive = true;
+            jumpStartedTime = Time.time;
+            lastJumpReachedHigh = false;
+
+            Vector3 velocity = body.linearVelocity;
+            velocity.y = CalculateJumpVelocity(baseJumpHeight);
+            body.linearVelocity = velocity;
+        }
+
+        private void ExecuteDoubleJump()
+        {
+            jumpQueued = false;
+            canDoubleJump = false;
+            jumpHoldActive = false;
+
+            bool atHighApex = lastJumpReachedHigh && Mathf.Abs(body.linearVelocity.y) <= apexVelocityTolerance;
+            float targetHeight = atHighApex ? apexDoubleJumpHeight : doubleJumpHeight;
+            Vector3 velocity = body.linearVelocity;
+            velocity.y = CalculateJumpVelocity(targetHeight);
+            body.linearVelocity = velocity;
+
+            lastJumpReachedHigh = atHighApex;
+        }
+
+        private void ApplyJumpHoldBoost()
+        {
+            if (!jumpHoldActive)
             {
-                canControl = false;
-            }
-            if (rb != null)
-            {
-                if (!active)
-                {
-                    rb.linearVelocity = Vector3.zero;
-                }
-                rb.isKinematic = !active;
+                return;
             }
 
-            if (playerCollider != null)
+            if (!jumpHeld || Time.time > jumpStartedTime + jumpHoldWindow)
             {
-                playerCollider.enabled = active;
+                jumpHoldActive = false;
+                return;
             }
 
-            if (cachedRenderers != null)
+            float targetVelocity = CalculateJumpVelocity(highJumpHeight);
+            Vector3 current = body.linearVelocity;
+            float boostedY = Mathf.MoveTowards(current.y, targetVelocity, holdBoostRate * Time.fixedDeltaTime);
+            current.y = boostedY;
+            body.linearVelocity = current;
+
+            if (Mathf.Abs(boostedY - targetVelocity) <= 0.05f)
             {
-                foreach (var renderer in cachedRenderers)
-                {
-                    if (renderer == null) continue;
-                    if (rendererDefaultStates != null && rendererDefaultStates.TryGetValue(renderer, out var defaultState))
-                    {
-                        renderer.enabled = active ? defaultState : false;
-                    }
-                    else
-                    {
-                        renderer.enabled = active;
-                    }
-                }
+                lastJumpReachedHigh = true;
+            }
+        }
+
+        private void ApplyAdditionalGravity()
+        {
+            if (gravityScale <= 1f)
+            {
+                return;
             }
 
-            if (!active)
+            Vector3 extraGravity = Physics.gravity * (gravityScale - 1f);
+            body.AddForce(extraGravity, ForceMode.Acceleration);
+        }
+
+        private float CalculateJumpVelocity(float height)
+        {
+            float gravityMagnitude = Mathf.Abs(Physics.gravity.y * gravityScale);
+            return Mathf.Sqrt(Mathf.Max(0.01f, 2f * gravityMagnitude * height));
+        }
+
+        public void SetInputEnabled(bool enabled)
+        {
+            inputActive = enabled;
+            if (enabled)
             {
-                moveInput = Vector3.zero;
-                if (moveAction != null) moveAction.Disable();
-                if (jumpAction != null) jumpAction.Disable();
-                if (attackAction != null) attackAction.Disable();
+                moveAction?.Enable();
+                jumpAction?.Enable();
             }
             else
             {
-                if (isAlive && canControl)
-                {
-                    moveAction?.Enable();
-                    jumpAction?.Enable();
-                    attackAction?.Enable();
-                }
-                remainingAirJumps = allowDoubleJump ? Mathf.Max(0, maxAirJumps) : 0;
+                moveInput = Vector2.zero;
+                moveAction?.Disable();
+                jumpAction?.Disable();
+                jumpQueued = false;
+                jumpHoldActive = false;
+                desiredLook = defaultLookDirection;
             }
 
-            abilitySystem?.SetInputEnabled(active && isAlive && canControl);
+            enhancedAbilitySystem?.SetInputEnabled(enabled);
         }
 
-        private void ApplyPlayerConfig()
+        #region IDamageable Implementation
+
+        public void TakeDamage(float damage)
         {
-            if (runtimePlayerConfig == null) return;
-
-            maxHealth = runtimePlayerConfig.maxHealth;
-            currentHealth = Mathf.Clamp(currentHealth, 0f, maxHealth);
-            moveSpeed = runtimePlayerConfig.moveSpeed;
-            jumpForce = runtimePlayerConfig.jumpForce;
-            damage = runtimePlayerConfig.damage;
-            attackRange = runtimePlayerConfig.attackRange;
-            groundCheckDistance = runtimePlayerConfig.groundCheckDistance;
-            groundLayerMask = runtimePlayerConfig.groundLayerMask;
-        }
-
-        private void EnsureCameraFollowsPlayer()
-        {
-            StartCoroutine(BindCameraRoutine());
-        }
-
-        private System.Collections.IEnumerator BindCameraRoutine()
-        {
-            float timeout = 3f;
-            float endTime = Time.time + timeout;
-
-            while (Time.time <= endTime)
+            if (isDead)
             {
-                var cameraController = FindFirstObjectByType<SimpleCameraController>();
-                if (cameraController != null)
-                {
-                    cameraController.SetTarget(transform);
-                    yield break;
-                }
-
-                yield return null;
+                return;
             }
 
-            Debug.LogWarning("[SimplePlayerController] Failed to find SimpleCameraController within timeout. Camera follow may not work until manually assigned.");
+            currentHealth = Mathf.Max(0f, currentHealth - damage);
+            HealthChanged?.Invoke(currentHealth, maxHealth);
+
+            if (currentHealth <= 0f)
+            {
+                HandleDeath();
+            }
+        }
+
+        public float GetHealth() => currentHealth;
+
+        public bool IsDead() => isDead;
+
+        private void HandleDeath()
+        {
+            if (isDead)
+            {
+                return;
+            }
+
+            isDead = true;
+            SetInputEnabled(false);
+            body.linearVelocity = Vector3.zero;
+            Died?.Invoke();
+
+            if (autoRespawn)
+            {
+                if (respawnRoutine != null)
+                {
+                    StopCoroutine(respawnRoutine);
+                }
+                respawnRoutine = StartCoroutine(RespawnAfterDelay());
+            }
+        }
+
+        private IEnumerator RespawnAfterDelay()
+        {
+            yield return new WaitForSeconds(respawnDelay);
+
+            Vector3 targetPosition = respawnPoint != null ? respawnPoint.position : initialSpawnPosition;
+            transform.position = targetPosition;
+            body.linearVelocity = Vector3.zero;
+
+            currentHealth = maxHealth;
+            HealthChanged?.Invoke(currentHealth, maxHealth);
+
+            isDead = false;
+            SetInputEnabled(true);
+            desiredLook = defaultLookDirection;
+            transform.rotation = Quaternion.LookRotation(defaultLookDirection, Vector3.up);
+            respawnRoutine = null;
+        }
+
+        #endregion
+
+        private void OnDrawGizmosSelected()
+        {
+            if (groundProbe == null)
+            {
+                return;
+            }
+
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawWireSphere(groundProbe.position, probeRadius);
         }
     }
 }
