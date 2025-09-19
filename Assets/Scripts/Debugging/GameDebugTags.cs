@@ -59,6 +59,7 @@ namespace MOBA.Debugging
         Combat,
         AbilityUse,
         Score,
-        Jump
+        Jump,
+        AntiCheat
     }
 }

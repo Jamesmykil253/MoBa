@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using MOBA.Abilities;
@@ -13,7 +15,7 @@ namespace MOBA
         [SerializeField] private SimpleAbilitySystem legacyAbilitySystem;
         [SerializeField] private InputActionReference[] abilityActions = new InputActionReference[4];
 
-        private System.Action<InputAction.CallbackContext>[] actionHandlers;
+        private readonly List<(InputAction action, Action<InputAction.CallbackContext> handler)> registeredHandlers = new();
 
         private void Awake()
         {
@@ -35,65 +37,89 @@ namespace MOBA
 
         private void OnEnable()
         {
-            if (abilityActions == null) return;
+            registeredHandlers.Clear();
 
-            if (actionHandlers == null || actionHandlers.Length != abilityActions.Length)
+            if (abilityActions == null)
             {
-                actionHandlers = new System.Action<InputAction.CallbackContext>[abilityActions.Length];
+                return;
             }
 
             for (int i = 0; i < abilityActions.Length; i++)
             {
                 var reference = abilityActions[i];
-                if (reference == null) continue;
-                var action = reference.action;
-                if (action == null) continue;
+                var action = reference != null ? reference.action : null;
 
-                if (actionHandlers[i] == null)
+                if (action == null)
                 {
-                    int abilityIndex = i;
-                    actionHandlers[i] = ctx =>
-                    {
-                        if (enhancedAbilitySystem != null)
-                        {
-                            enhancedAbilitySystem.TryCastAbility(abilityIndex);
-                        }
-                        else
-                        {
-                            legacyAbilitySystem?.TryCastAbility(abilityIndex);
-                        }
-                    };
+                    continue;
                 }
 
-                action.performed += actionHandlers[i];
+                if (!TryResolveAbilityIndex(action, out int abilityIndex))
+                {
+                    continue;
+                }
+
+                Action<InputAction.CallbackContext> handler = ctx =>
+                {
+                    if (enhancedAbilitySystem != null)
+                    {
+                        enhancedAbilitySystem.TryCastAbility(abilityIndex);
+                    }
+                    else
+                    {
+                        legacyAbilitySystem?.TryCastAbility(abilityIndex);
+                    }
+                };
+
+                action.performed += handler;
                 if (!action.enabled)
                 {
                     action.Enable();
                 }
+
+                registeredHandlers.Add((action, handler));
             }
         }
 
         private void OnDisable()
         {
-            if (abilityActions == null) return;
-
-            for (int i = 0; i < abilityActions.Length; i++)
+            foreach (var (action, handler) in registeredHandlers)
             {
-                var reference = abilityActions[i];
-                if (reference == null) continue;
-                var action = reference.action;
-                if (action == null) continue;
-
-                if (actionHandlers != null && actionHandlers.Length > i && actionHandlers[i] != null)
+                if (action != null)
                 {
-                    action.performed -= actionHandlers[i];
-                }
-
-                if (action.enabled)
-                {
-                    action.Disable();
+                    action.performed -= handler;
+                    if (action.enabled)
+                    {
+                        action.Disable();
+                    }
                 }
             }
+
+            registeredHandlers.Clear();
+        }
+
+        private bool TryResolveAbilityIndex(InputAction action, out int abilityIndex)
+        {
+            abilityIndex = -1;
+            if (action == null)
+            {
+                return false;
+            }
+
+            const string prefix = "Ability";
+            if (!action.name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var suffix = action.name.Substring(prefix.Length);
+            if (int.TryParse(suffix, out int oneBasedIndex))
+            {
+                abilityIndex = Mathf.Max(0, oneBasedIndex - 1);
+                return true;
+            }
+
+            return false;
         }
     }
 }

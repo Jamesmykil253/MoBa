@@ -47,6 +47,7 @@ Collect crypto coins by defeating enemies and NPCs, then deposit them at your te
 4. **Use abilities** (Q, E, R) with manual aim for bonus damage
 5. **Collect coins** that drop from defeated enemies
 6. **Deposit coins** at scoring zones using the Interact button
+7. **One input path per ability:** The enhanced ability system now auto-disables its internal bindings when a legacy `SimpleInputHandler` is present, ensuring exactly one listener handles casts—mirroring AAA input hygiene from *Game Programming Patterns*.
 
 ### 💡 **Strategy Tips**
 - **High ground advantage:** Jump to elevated positions for better positioning
@@ -196,6 +197,20 @@ Futuristic battle arenas inspired by tech company campuses, crypto mining facili
 - **Input Monitoring:** Real-time detection of impossible actions
 - **Community Reporting:** Player-driven moderation system
 - **Regular Updates:** Continuous security improvements
+
+### 🎯 **Input Architecture**
+- **EnhancedAbilitySystem** owns ability bindings by default; set `enableInternalInputActions = false` if you need a bespoke handler.
+- When both systems are present, the enhanced runtime now yields control automatically to avoid duplicate callbacks.
+
+### 🌐 **Networking Stack**
+- **ProductionNetworkManager:** Handles host/client/server lifecycle, reconnection, and ping monitoring for stable MOBA sessions
+- **Unity Transport:** Tuned for low-latency arenas with drop-in recovery
+- **Event Hooks:** Surfaced through `UnifiedEventSystem` for UI, analytics, and live-ops tooling
+- **Pooling Validator:** Validate pooled prefabs via `Tools ▸ MOBA ▸ Validate Pooled Prefabs` before shipping builds.
+
+### 🧪 **System Test Scenes**
+- Generate isolated ability, networking, pooling, movement, and error-handling sandboxes from the Unity editor: `Tools ▸ System Tests ▸ Generate Test Scenes`.
+- Each scene relies on `SystemTestSceneBootstrap` to spawn lighting, cameras, and prefabs consistently—mirroring the AAA testing loops advocated in *Game Programming Patterns* and *Real-Time Rendering*.
 
 ### 🌍 **Global Infrastructure**
 - **Regional Servers:** Low-latency connections worldwide

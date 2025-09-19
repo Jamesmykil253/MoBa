@@ -1,14 +1,22 @@
 using UnityEngine;
+using Unity.Netcode;
+using MOBA.Configuration;
 using MOBA.Debugging;
+using MOBA.Networking;
+using MOBA.Services;
 
 namespace MOBA
 {
     /// <summary>
     /// Simple game manager - coordinates basic MOBA gameplay
     /// </summary>
-    public class SimpleGameManager : MonoBehaviour
+    public class SimpleGameManager : NetworkBehaviour
     {
         public static SimpleGameManager Instance { get; private set; }
+
+        [Header("Configuration")]
+        [SerializeField] private GameConfig defaultGameConfig;
+        [SerializeField] private bool lockGameSettingsToConfig = true;
 
         private GameDebugContext BuildContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.General)
         {
@@ -22,6 +30,8 @@ namespace MOBA
 
         private void Awake()
         {
+            ApplyConfiguredDefaultsIfNeeded();
+
             if (Instance != null && Instance != this)
             {
                 GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Configuration),
@@ -31,6 +41,65 @@ namespace MOBA
             }
 
             Instance = this;
+            InitializeServices();
+        }
+
+        private void OnValidate()
+        {
+            ApplyConfiguredDefaultsIfNeeded();
+        }
+
+        private void ApplyConfiguredDefaultsIfNeeded()
+        {
+            if (!lockGameSettingsToConfig || defaultGameConfig == null)
+            {
+                return;
+            }
+
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                defaultGameConfig.Validate();
+            }
+#endif
+
+            maxPlayers = Mathf.Clamp(defaultGameConfig.maxPlayers, 1, 20);
+            gameTime = Mathf.Max(1f, defaultGameConfig.gameTimeInSeconds);
+            scoreToWin = Mathf.Max(1, defaultGameConfig.scoreToWin);
+            matchLifecycleService?.Configure(gameTime, scoreToWin);
+        }
+
+        private void InitializeServices()
+        {
+            if (scoringService != null)
+            {
+                scoringService.ScoreChanged -= HandleScoreChanged;
+            }
+
+            if (!ServiceRegistry.TryResolve<IScoringService>(out scoringService))
+            {
+                scoringService = new ScoringService(DefaultTeamCount);
+                ServiceRegistry.Register<IScoringService>(scoringService, overwrite: false);
+            }
+
+            scoringService.ScoreChanged += HandleScoreChanged;
+
+            if (matchLifecycleService != null)
+            {
+                matchLifecycleService.MatchEnded -= HandleMatchEnded;
+            }
+
+            if (!ServiceRegistry.TryResolve<IMatchLifecycleService>(out matchLifecycleService))
+            {
+                matchLifecycleService = new MatchLifecycleService(scoringService);
+                matchLifecycleService.Configure(gameTime, scoreToWin);
+                ServiceRegistry.Register<IMatchLifecycleService>(matchLifecycleService, overwrite: false);
+            }
+
+            matchLifecycleService.Configure(gameTime, scoreToWin);
+            matchLifecycleService.MatchEnded += HandleMatchEnded;
+            clientTimeRemaining = matchLifecycleService.TimeRemaining;
+            UpdateUI();
         }
         [Header("Game Settings")]
         public int maxPlayers = 10;
@@ -48,9 +117,17 @@ namespace MOBA
         public UnityEngine.UI.Text scoreText;
 
         // Game state
-        private float currentTime;
-        private int[] teamScores = new int[2];
         private bool gameActive = false;
+        private IScoringService scoringService;
+        private IMatchLifecycleService matchLifecycleService;
+        private float clientTimeRemaining;
+        private const int DefaultTeamCount = 2;
+
+        private readonly NetworkVariable<float> networkTimeRemaining = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<int> networkTeamScoreA = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<int> networkTeamScoreB = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<bool> networkGameActive = new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<int> networkWinningTeam = new NetworkVariable<int>(-1, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
         [Header("Runtime")]
         [SerializeField] private bool autoStartOnEnable = true;
@@ -68,23 +145,92 @@ namespace MOBA
         
         void Start()
         {
-            if (autoStartOnEnable && !gameActive)
+            if (IsServer && autoStartOnEnable && !gameActive)
             {
                 StartMatch();
             }
         }
 
+        public override void OnNetworkSpawn()
+        {
+            base.OnNetworkSpawn();
+
+            InitializeServices();
+
+            networkTimeRemaining.OnValueChanged += OnNetworkTimeChanged;
+            networkTeamScoreA.OnValueChanged += OnNetworkScoreAChanged;
+            networkTeamScoreB.OnValueChanged += OnNetworkScoreBChanged;
+            networkGameActive.OnValueChanged += OnNetworkGameActiveChanged;
+            networkWinningTeam.OnValueChanged += OnNetworkWinningTeamChanged;
+
+            if (!IsServer)
+            {
+                clientTimeRemaining = networkTimeRemaining.Value;
+                scoringService?.SetScore(0, networkTeamScoreA.Value, notify: false);
+                scoringService?.SetScore(1, networkTeamScoreB.Value, notify: false);
+                gameActive = networkGameActive.Value;
+                UpdateUI();
+            }
+
+            if (IsServer && autoStartOnEnable && !gameActive)
+            {
+                StartMatch();
+            }
+
+            if (IsServer)
+            {
+                var networkManager = ProductionNetworkManager.Instance;
+                if (networkManager != null)
+                {
+                    networkManager.OnPlayerConnected += HandleServerPlayerJoined;
+                    networkManager.OnPlayerDisconnected += HandleServerPlayerDisconnected;
+                }
+            }
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            base.OnNetworkDespawn();
+
+            networkTimeRemaining.OnValueChanged -= OnNetworkTimeChanged;
+            networkTeamScoreA.OnValueChanged -= OnNetworkScoreAChanged;
+            networkTeamScoreB.OnValueChanged -= OnNetworkScoreBChanged;
+            networkGameActive.OnValueChanged -= OnNetworkGameActiveChanged;
+            networkWinningTeam.OnValueChanged -= OnNetworkWinningTeamChanged;
+
+            if (IsServer)
+            {
+                var networkManager = ProductionNetworkManager.Instance;
+                if (networkManager != null)
+                {
+                    networkManager.OnPlayerConnected -= HandleServerPlayerJoined;
+                    networkManager.OnPlayerDisconnected -= HandleServerPlayerDisconnected;
+                }
+            }
+        }
+
         void Update()
         {
-            if (!gameActive) return;
-            
-            UpdateGameTime();
+            if (!IsServer || matchLifecycleService == null || !matchLifecycleService.IsActive)
+            {
+                return;
+            }
+
+            matchLifecycleService.Tick(Time.deltaTime);
+            clientTimeRemaining = matchLifecycleService.TimeRemaining;
+            networkTimeRemaining.Value = clientTimeRemaining;
             UpdateUI();
-            CheckWinConditions();
         }
         
         public bool StartMatch()
         {
+            if (NetworkManager.Singleton != null && !IsServer)
+            {
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Validation),
+                    "StartMatch called on client; ignoring.");
+                return false;
+            }
+
             if (gameActive)
             {
                 GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Lifecycle),
@@ -93,20 +239,30 @@ namespace MOBA
             }
 
             currentTime = gameTime;
-            teamScores[0] = 0;
-            teamScores[1] = 0;
             gameActive = true;
+            scoringService?.ResetScores();
+            networkTimeRemaining.Value = currentTime;
+            networkGameActive.Value = true;
+            networkWinningTeam.Value = -1;
 
             if (!ValidateSpawnsAndPrefabs())
             {
                 gameActive = false;
+                networkGameActive.Value = false;
                 return false;
+            }
+
+            if (IsServer && NetworkManager.Singleton != null)
+            {
+                ProductionNetworkManager.Instance?.DespawnAllPlayerAvatars();
             }
 
             SpawnPlayers();
             SpawnEnemies();
 
             InitializeEnemiesInScene();
+
+            UpdateUI();
 
             GameDebug.Log(BuildContext(GameDebugMechanicTag.Lifecycle), "Game match started.",
                 ("Duration", gameTime), ("ScoreToWin", scoreToWin));
@@ -209,6 +365,32 @@ namespace MOBA
         
         void SpawnPlayers()
         {
+            if (NetworkManager.Singleton != null)
+            {
+                if (!IsServer)
+                {
+                    return;
+                }
+
+                if (playerPrefab == null)
+                {
+                    GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
+                        "Player prefab is not assigned; cannot spawn network avatars.");
+                    return;
+                }
+
+                var networkManager = ProductionNetworkManager.Instance;
+                if (networkManager == null)
+                {
+                    GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Spawning),
+                        "ProductionNetworkManager instance not found; cannot spawn network players.");
+                    return;
+                }
+
+                networkManager.SpawnPlayerAvatars(playerPrefab, playerSpawnPoints);
+                return;
+            }
+
             if (playerSpawnPoints == null || playerSpawnPoints.Length == 0 || playerPrefab == null)
             {
                 return;
@@ -219,7 +401,7 @@ namespace MOBA
 
             for (int i = 0; i < playerSpawnPoints.Length && spawned < spawnLimit; i++)
             {
-                if (playerPrefab != null && playerSpawnPoints[i] != null)
+                if (playerSpawnPoints[i] != null)
                 {
                     Instantiate(playerPrefab, playerSpawnPoints[i].position, playerSpawnPoints[i].rotation);
                     spawned++;
@@ -229,6 +411,10 @@ namespace MOBA
         
         void SpawnEnemies()
         {
+            if (NetworkManager.Singleton != null && !IsServer)
+            {
+                return;
+            }
             if (enemySpawnPoints == null || enemySpawnPoints.Length == 0 || enemyPrefab == null)
             {
                 return;
@@ -239,6 +425,11 @@ namespace MOBA
                 if (enemyPrefab != null && enemySpawnPoints[i] != null)
                 {
                     var enemyObj = Instantiate(enemyPrefab, enemySpawnPoints[i].position, enemySpawnPoints[i].rotation);
+                    var netObj = enemyObj.GetComponent<NetworkObject>();
+                    if (netObj != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+                    {
+                        netObj.Spawn();
+                    }
                     var enemyController = enemyObj.GetComponent<EnemyController>();
                     if (enemyController != null)
                     {
@@ -256,6 +447,10 @@ namespace MOBA
 
         private void InitializeEnemiesInScene()
         {
+            if (NetworkManager.Singleton != null && !IsServer)
+            {
+                return;
+            }
             var enemies = FindObjectsByType<EnemyController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             foreach (var enemy in enemies)
             {
@@ -266,6 +461,7 @@ namespace MOBA
         void UpdateGameTime()
         {
             currentTime -= Time.deltaTime;
+            networkTimeRemaining.Value = Mathf.Max(0f, currentTime);
             if (currentTime <= 0)
             {
                 currentTime = 0;
@@ -277,75 +473,75 @@ namespace MOBA
         {
             if (timeText != null)
             {
-                int minutes = Mathf.FloorToInt(currentTime / 60);
-                int seconds = Mathf.FloorToInt(currentTime % 60);
+                float time = IsServer ? (matchLifecycleService?.TimeRemaining ?? clientTimeRemaining) : clientTimeRemaining;
+                int minutes = Mathf.FloorToInt(time / 60f);
+                int seconds = Mathf.FloorToInt(time % 60f);
                 timeText.text = $"{minutes:00}:{seconds:00}";
             }
-            
+
             if (scoreText != null)
             {
-                scoreText.text = $"Team 1: {teamScores[0]} | Team 2: {teamScores[1]}";
+                int scoreA = scoringService?.GetScore(0) ?? networkTeamScoreA.Value;
+                int scoreB = scoringService?.GetScore(1) ?? networkTeamScoreB.Value;
+                scoreText.text = $"Team 1: {scoreA} | Team 2: {scoreB}";
             }
         }
         
-        void CheckWinConditions()
+        public bool AddScore(int team, int points = 1)
         {
-            for (int i = 0; i < teamScores.Length; i++)
+            if (NetworkManager.Singleton != null && !IsServer)
             {
-                if (teamScores[i] >= scoreToWin)
-                {
-                    EndGame(i);
-                    return;
-                }
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Score),
+                    "AddScore called on client; ignoring.");
+                return false;
             }
-        }
-        
-        public void AddScore(int team, int points = 1)
-        {
             if (!gameActive)
             {
                 GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Score),
                     "Attempted to add score after match ended.");
-                return;
+                return false;
             }
-            if (team >= 0 && team < teamScores.Length)
+            if (scoringService != null && scoringService.AddScore(team, points))
             {
-                teamScores[team] += points;
-                OnScoreUpdate?.Invoke(team, teamScores[team]);
                 GameDebug.Log(BuildContext(GameDebugMechanicTag.Score),
                     "Score updated.",
                     ("Team", team),
-                    ("NewScore", teamScores[team]));
+                    ("NewScore", scoringService.GetScore(team)));
+                return true;
             }
+
+            GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Score),
+                "AddScore called with invalid team index.",
+                ("Team", team));
+            return false;
         }
         
         void EndGame(int winningTeam = -1)
         {
-            if (!gameActive)
+            if (NetworkManager.Singleton != null && !IsServer)
+            {
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Lifecycle),
+                    "EndGame called on client; ignoring.");
+                return;
+            }
+            if (matchLifecycleService == null || !matchLifecycleService.IsActive)
             {
                 GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Lifecycle),
                     "EndGame called but game already inactive.");
                 return;
             }
-            gameActive = false;
 
-            if (winningTeam >= 0)
-            {
-                GameDebug.Log(BuildContext(GameDebugMechanicTag.Score),
-                    "Team won the match.",
-                    ("TeamIndex", winningTeam),
-                    ("Score", teamScores[winningTeam]));
-            }
-            else
-            {
-                GameDebug.Log(BuildContext(GameDebugMechanicTag.Lifecycle), "Match ended due to time limit.");
-            }
-
-            OnGameEnd?.Invoke(winningTeam);
+            matchLifecycleService.StopMatch(winningTeam);
         }
         
         public void RestartGame()
         {
+            if (NetworkManager.Singleton != null && !IsServer)
+            {
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Lifecycle),
+                    "RestartGame called on client; ignoring.");
+                return;
+            }
             // Simple restart - reload scene
             UnityEngine.SceneManagement.SceneManager.LoadScene(
                 UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
@@ -358,22 +554,107 @@ namespace MOBA
         
         public float GetTimeRemaining()
         {
-            return currentTime;
-        }
-        
-        public int GetScore(int team)
-        {
-            if (team >= 0 && team < teamScores.Length)
-                return teamScores[team];
-            return 0;
+            return IsServer ? (matchLifecycleService?.TimeRemaining ?? 0f) : clientTimeRemaining;
         }
 
-        private void OnDestroy()
+        public int GetScore(int team)
         {
+            return scoringService?.GetScore(team) ?? 0;
+        }
+
+        internal bool IsGameActiveServer => matchLifecycleService?.IsActive ?? false;
+
+        internal void HandleServerPlayerJoined(ulong clientId)
+        {
+            if (!IsServer)
+            {
+                return;
+            }
+
+            SpawnPlayers();
+        }
+
+        internal void HandleServerPlayerDisconnected(ulong clientId)
+        {
+            if (!IsServer)
+            {
+                return;
+            }
+
+            // Currently no additional behavior beyond avatar despawn.
+        }
+
+        private void OnNetworkTimeChanged(float previous, float current)
+        {
+            currentTime = current;
+            UpdateUI();
+        }
+
+        private void OnNetworkScoreAChanged(int previous, int current)
+        {
+            scoringService?.SetScore(0, current, notify: false);
+            if (!IsServer)
+            {
+                OnScoreUpdate?.Invoke(0, current);
+                UpdateUI();
+            }
+        }
+
+        private void OnNetworkScoreBChanged(int previous, int current)
+        {
+            scoringService?.SetScore(1, current, notify: false);
+            if (!IsServer)
+            {
+                OnScoreUpdate?.Invoke(1, current);
+                UpdateUI();
+            }
+        }
+
+        private void OnNetworkGameActiveChanged(bool previous, bool current)
+        {
+            gameActive = current;
+            if (!IsServer && !current)
+            {
+                int winningTeam = networkWinningTeam.Value;
+                OnGameEnd?.Invoke(winningTeam);
+            }
+            UpdateUI();
+        }
+
+        private void OnNetworkWinningTeamChanged(int previous, int current)
+        {
+            // Clients rely on OnNetworkGameActiveChanged to raise game end events.
+        }
+
+        public override void OnDestroy()
+        {
+            base.OnDestroy();
             if (Instance == this)
             {
                 Instance = null;
             }
+            if (scoringService != null)
+            {
+                scoringService.ScoreChanged -= HandleScoreChanged;
+            }
+        }
+
+        private void HandleScoreChanged(int team, int score)
+        {
+            if (IsServer)
+            {
+                if (team == 0)
+                {
+                    networkTeamScoreA.Value = score;
+                }
+                else if (team == 1)
+                {
+                    networkTeamScoreB.Value = score;
+                }
+            }
+
+            OnScoreUpdate?.Invoke(team, score);
+            UpdateUI();
         }
     }
 }

@@ -1,4 +1,5 @@
 using UnityEngine;
+using Unity.Netcode;
 using MOBA.Debugging;
 
 namespace MOBA
@@ -63,15 +64,19 @@ namespace MOBA
                 return;
             }
 
-            Collect();
+            Collect(player);
         }
 
-        private void Collect()
+        private void Collect(SimplePlayerController collector)
         {
+            if (NetworkManager.Singleton != null && !NetworkManager.Singleton.IsServer)
+            {
+                return;
+            }
             collected = true;
             triggerCollider.enabled = false;
 
-            AwardScore();
+            AwardScore(collector);
             PlayFeedback();
 
             GameDebug.Log(new GameDebugContext(
@@ -85,7 +90,7 @@ namespace MOBA
             Destroy(gameObject);
         }
 
-        private void AwardScore()
+        private void AwardScore(SimplePlayerController collector)
         {
             var gameManager = SimpleGameManager.Instance;
             if (gameManager == null)
@@ -95,7 +100,18 @@ namespace MOBA
 
             if (gameManager != null)
             {
-                gameManager.AddScore(0, scoreValue);
+                int teamToCredit = collector != null ? collector.TeamIndex : 0;
+                if (!gameManager.AddScore(teamToCredit, scoreValue))
+                {
+                    GameDebug.LogWarning(new GameDebugContext(
+                            GameDebugCategory.GameLifecycle,
+                            GameDebugSystemTag.GameLifecycle,
+                            GameDebugMechanicTag.Score,
+                            subsystem: nameof(CoinPickup)),
+                        "Attempted to credit score to invalid team; falling back to team 0.",
+                        ("RequestedTeam", teamToCredit));
+                    gameManager.AddScore(0, scoreValue);
+                }
             }
             else
             {

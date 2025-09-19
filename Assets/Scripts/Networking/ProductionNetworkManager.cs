@@ -29,6 +29,11 @@ namespace MOBA.Networking
     /// </summary>
     public class ProductionNetworkManager : MonoBehaviour
     {
+        public static ProductionNetworkManager Instance { get; private set; }
+#if UNITY_INCLUDE_TESTS
+        public static bool AllowMultipleInstancesForTesting { get; set; }
+#endif
+
         private NetworkErrorCode lastErrorCode = NetworkErrorCode.None;
         private string lastErrorMessage = string.Empty;
         // Edge case: rapid connect/disconnect cooldown
@@ -45,6 +50,14 @@ namespace MOBA.Networking
         [Header("Anti-Cheat")]
         [SerializeField] private bool enableServerValidation = true;
         [SerializeField] private float maxAllowedPing = 500f;
+        [SerializeField, Tooltip("Maximum movement speed (m/s) tolerated server-side before flagging a player.")]
+        private float maxServerMovementSpeed = 18f;
+        [SerializeField, Tooltip("Maximum instantaneous displacement permitted between validation samples.")]
+        private float maxServerTeleportDistance = 25f;
+        [SerializeField, Tooltip("How many suspicious events are tolerated before kicking a client.")]
+        private int maxSuspicionBeforeKick = 3;
+        [SerializeField, Tooltip("Seconds after which a suspicion stack decays by one.")]
+        private float suspicionDecayInterval = 45f;
         [Header("Debug")]
         [SerializeField] private bool logNetworkEvents = true;
         // Network state tracking
@@ -57,9 +70,27 @@ namespace MOBA.Networking
         // Player management
         private Dictionary<ulong, PlayerNetworkData> connectedPlayers = new Dictionary<ulong, PlayerNetworkData>();
         private int currentPlayerCount = 0;
+        private readonly Dictionary<ulong, NetworkObject> playerAvatars = new Dictionary<ulong, NetworkObject>();
         
         // Network statistics
         private NetworkStats networkStats = new NetworkStats();
+
+        private void Awake()
+        {
+#if UNITY_INCLUDE_TESTS
+            if (AllowMultipleInstancesForTesting && Instance != null && Instance != this)
+            {
+                return;
+            }
+#endif
+            if (Instance != null && Instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
+
+            Instance = this;
+        }
 
         private GameDebugContext BuildContext(
             GameDebugMechanicTag mechanic = GameDebugMechanicTag.Networking,
@@ -100,6 +131,12 @@ namespace MOBA.Networking
         
         void Start()
         {
+#if UNITY_INCLUDE_TESTS
+            if (AllowMultipleInstancesForTesting && Instance != this)
+            {
+                return;
+            }
+#endif
             InitializeNetworking();
             
             if (autoStartAsHost)
@@ -110,20 +147,40 @@ namespace MOBA.Networking
         
         void Update()
         {
-            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsClient)
+#if UNITY_INCLUDE_TESTS
+            if (AllowMultipleInstancesForTesting && Instance != this)
             {
-                UpdatePing();
-                UpdateNetworkStats();
-                
-                if (enableServerValidation)
-                {
-                    PerformAntiCheatChecks();
-                }
+                return;
+            }
+#endif
+            var networkManager = NetworkManager.Singleton;
+            if (networkManager == null)
+            {
+                return;
+            }
+
+            if (!networkManager.IsClient && !networkManager.IsServer)
+            {
+                return;
+            }
+
+            UpdatePing();
+            UpdateNetworkStats();
+
+            if (networkManager.IsServer && enableServerValidation)
+            {
+                PerformAntiCheatChecks();
             }
         }
         
         void OnDestroy()
         {
+#if UNITY_INCLUDE_TESTS
+            if (AllowMultipleInstancesForTesting && Instance != this)
+            {
+                return;
+            }
+#endif
             // Clean up
             if (reconnectionCoroutine != null)
             {
@@ -145,6 +202,11 @@ namespace MOBA.Networking
             OnPlayerDisconnected = null;
             OnPingUpdated = null;
             OnNetworkError = null;
+
+            if (Instance == this)
+            {
+                Instance = null;
+            }
         }
         
         #endregion
@@ -159,7 +221,9 @@ namespace MOBA.Networking
                     "NetworkManager.Singleton is null; cannot initialize networking.");
                 return;
             }
-            
+
+            NetworkManager.Singleton.NetworkConfig.PlayerPrefab = null;
+
             // Configure Unity Transport
             var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
             if (transport != null)
@@ -233,7 +297,13 @@ namespace MOBA.Networking
             // Prevent rapid reconnects
             if (Time.time - lastDisconnectTime < reconnectCooldown)
             {
-                HandleConnectionWarning($"Reconnect attempted too quickly. Please wait {reconnectCooldown - (Time.time - lastDisconnectTime):F1}s.");
+                float remaining = Mathf.Max(0f, reconnectCooldown - (Time.time - lastDisconnectTime));
+                string warning = $"Reconnect attempted too quickly. Please wait {remaining:F1}s.";
+                HandleConnectionWarning(warning);
+                lastErrorCode = NetworkErrorCode.RapidReconnect;
+                lastErrorMessage = warning;
+                SetConnectionState(NetworkConnectionState.Error);
+                OnNetworkError?.Invoke($"[{NetworkErrorCode.RapidReconnect}] {warning}");
                 return;
             }
 
@@ -428,28 +498,95 @@ namespace MOBA.Networking
         
         private void UpdatePing()
         {
-            if (Time.time - lastPingTime > 1f) // Update ping every second
+            if (Time.time - lastPingTime <= 1f)
             {
-                lastPingTime = Time.time;
-                
-                if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsClient)
+                return;
+            }
+
+            lastPingTime = Time.time;
+
+            if (NetworkManager.Singleton == null)
+            {
+                return;
+            }
+
+            var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
+            if (transport == null)
+            {
+                return;
+            }
+
+            int measuredRtt = -1;
+
+            if (NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer)
+            {
+                ulong serverClientId = NetworkManager.ServerClientId;
+                ulong rawRtt = transport.GetCurrentRtt(serverClientId);
+                if (rawRtt > int.MaxValue)
                 {
-                    // Get RTT from Unity Transport if available
-                    var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
-                    if (transport != null)
+                    GameDebug.LogWarning(
+                        BuildContext(GameDebugMechanicTag.Networking, subsystem: "Ping"),
+                        "Server RTT exceeds int range.",
+                        ("Rtt", rawRtt));
+                    return;
+                }
+
+                measuredRtt = (int)rawRtt;
+            }
+            else if (NetworkManager.Singleton.IsServer)
+            {
+                if (NetworkManager.Singleton.IsClient)
+                {
+                    // Host: treat self ping as zero for UI purposes
+                    measuredRtt = 0;
+                }
+                else
+                {
+                    // Dedicated server: average connected clients that report valid RTTs
+                    float totalRtt = 0f;
+                    int sampleCount = 0;
+                    foreach (var kvp in connectedPlayers)
                     {
-                        // This is a simplified ping calculation
-                        // In production, you'd want more sophisticated ping measurement
-                        currentPing = Time.realtimeSinceStartup % 100f; // Placeholder
-                        OnPingUpdated?.Invoke(currentPing);
-                        
-                        // Check for high ping
-                        if (currentPing > maxAllowedPing)
+                        if (!kvp.Value.IsActive)
                         {
-                            HandleConnectionWarning($"High ping detected: {currentPing}ms");
+                            continue;
+                        }
+
+                        ulong clientId = kvp.Key;
+                        ulong rawClientRtt = transport.GetCurrentRtt(clientId);
+                        if (rawClientRtt > int.MaxValue)
+                        {
+                            GameDebug.LogWarning(
+                                BuildContext(GameDebugMechanicTag.Networking, subsystem: "Ping"),
+                                "Client RTT exceeds int range.",
+                                ("ClientId", clientId),
+                                ("Rtt", rawClientRtt));
+                            continue;
+                        }
+
+                        int clientRtt = (int)rawClientRtt;
+                        if (clientRtt >= 0)
+                        {
+                            totalRtt += clientRtt;
+                            sampleCount++;
                         }
                     }
+
+                    measuredRtt = sampleCount > 0 ? Mathf.RoundToInt(totalRtt / sampleCount) : 0;
                 }
+            }
+
+            if (measuredRtt < 0)
+            {
+                return;
+            }
+
+            currentPing = measuredRtt;
+            OnPingUpdated?.Invoke(currentPing);
+
+            if (currentPing > maxAllowedPing)
+            {
+                HandleConnectionWarning($"High ping detected: {currentPing}ms");
             }
         }
         
@@ -466,28 +603,106 @@ namespace MOBA.Networking
         
         private void PerformAntiCheatChecks()
         {
-            // Basic anti-cheat validation
-            // In production, this would be much more sophisticated
-            
-            foreach (var player in connectedPlayers.Values)
+            foreach (var kvp in connectedPlayers)
             {
-                if (player.IsActive)
+                var player = kvp.Value;
+                if (!player.IsActive)
                 {
-                    // Check for suspicious activity
-                    ValidatePlayerBehavior(player);
+                    continue;
                 }
+
+                ValidatePlayerBehavior(player);
             }
         }
-        
+
         private void ValidatePlayerBehavior(PlayerNetworkData player)
         {
-            // Placeholder for anti-cheat validation
-            // Real implementation would check movement speed, input frequency, etc.
-            
-            if (Time.time - player.ConnectedTime > 60f) // After 1 minute
+            var avatar = player.Avatar;
+            if (avatar == null || !avatar)
             {
-                // Perform validation checks
-                // This is where you'd implement actual anti-cheat logic
+                return;
+            }
+
+            var transform = avatar.transform;
+            Vector3 currentPosition = transform.position;
+            float now = Time.time;
+
+            // First sample initialisation
+            if (player.LastMovementTime <= 0f)
+            {
+                player.LastPosition = currentPosition;
+                player.LastMovementTime = now;
+                return;
+            }
+
+            float deltaTime = now - player.LastMovementTime;
+            if (deltaTime <= Mathf.Epsilon)
+            {
+                return;
+            }
+
+            float distance = Vector3.Distance(currentPosition, player.LastPosition);
+            float speed = distance / deltaTime;
+
+            bool flagged = false;
+
+            if (speed > maxServerMovementSpeed)
+            {
+                flagged = true;
+                GameDebug.LogWarning(
+                    BuildContext(GameDebugMechanicTag.AntiCheat, subsystem: "Speed" , actorClientId: player.ClientId),
+                    "Player speed exceeded server threshold.",
+                    ("Speed", speed),
+                    ("Threshold", maxServerMovementSpeed));
+            }
+
+            if (distance > maxServerTeleportDistance)
+            {
+                flagged = true;
+                GameDebug.LogWarning(
+                    BuildContext(GameDebugMechanicTag.AntiCheat, subsystem: "Teleport", actorClientId: player.ClientId),
+                    "Player teleported suspiciously.",
+                    ("Distance", distance),
+                    ("Threshold", maxServerTeleportDistance));
+            }
+
+            if (flagged)
+            {
+                IncrementSuspicion(player, "Movement anomaly");
+            }
+            else if (player.SuspiciousActivityCount > 0 && now - player.LastSuspicionTime >= suspicionDecayInterval)
+            {
+                player.SuspiciousActivityCount = Mathf.Max(0, player.SuspiciousActivityCount - 1);
+                player.LastSuspicionTime = now;
+            }
+
+            player.LastPosition = currentPosition;
+            player.LastMovementTime = now;
+        }
+
+        private void IncrementSuspicion(PlayerNetworkData player, string reason)
+        {
+            player.SuspiciousActivityCount++;
+            player.LastSuspicionTime = Time.time;
+
+            if (player.SuspiciousActivityCount >= maxSuspicionBeforeKick)
+            {
+                GameDebug.LogError(
+                    BuildContext(GameDebugMechanicTag.AntiCheat, subsystem: "Enforcement", actorClientId: player.ClientId),
+                    "Player exceeded suspicion limit; kicking.",
+                    ("Reason", reason),
+                    ("Suspicion", player.SuspiciousActivityCount));
+
+                KickPlayer(player.ClientId, $"Anti-cheat triggered: {reason}");
+            }
+            else
+            {
+                GameDebug.LogWarning(
+                    BuildContext(GameDebugMechanicTag.AntiCheat, subsystem: "Warning", actorClientId: player.ClientId),
+                    "Player flagged by anti-cheat.",
+                    ("Reason", reason),
+                    ("Suspicion", player.SuspiciousActivityCount),
+                    ("Threshold", maxSuspicionBeforeKick));
             }
         }
         
@@ -564,7 +779,74 @@ namespace MOBA.Networking
         public bool IsHost() => NetworkManager.Singleton != null && NetworkManager.Singleton.IsHost;
         public bool IsServer() => NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
         public bool IsClient() => NetworkManager.Singleton != null && NetworkManager.Singleton.IsClient;
-        
+
+        public void SpawnPlayerAvatars(GameObject playerPrefab, Transform[] spawnPoints)
+        {
+            if (!IsServer() || NetworkManager.Singleton == null)
+            {
+                return;
+            }
+
+            if (playerPrefab == null)
+            {
+                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Spawning),
+                    "Cannot spawn player avatars; player prefab is null.");
+                return;
+            }
+
+            var clientIds = NetworkManager.Singleton.ConnectedClientsIds;
+            int spawnCount = spawnPoints != null ? spawnPoints.Length : 0;
+            int spawnIndex = 0;
+
+            foreach (var clientId in clientIds)
+            {
+                if (!connectedPlayers.TryGetValue(clientId, out var playerData))
+                {
+                    continue;
+                }
+
+                if (playerAvatars.TryGetValue(clientId, out var existingAvatar) && existingAvatar != null && existingAvatar.IsSpawned)
+                {
+                    spawnIndex++;
+                    continue;
+                }
+
+                var spawnTransform = ResolveSpawnTransform(spawnPoints, spawnCount, spawnIndex);
+                Vector3 position = spawnTransform != null ? spawnTransform.position : Vector3.zero;
+                Quaternion rotation = spawnTransform != null ? spawnTransform.rotation : Quaternion.identity;
+
+                var instance = Instantiate(playerPrefab, position, rotation);
+                var networkObject = instance.GetComponent<NetworkObject>();
+                if (networkObject == null)
+                {
+                    GameDebug.LogError(BuildContext(GameDebugMechanicTag.Spawning),
+                        "Player prefab missing NetworkObject component.",
+                        ("Prefab", playerPrefab.name));
+                    Destroy(instance);
+                    continue;
+                }
+
+                networkObject.SpawnAsPlayerObject(clientId, true);
+                playerAvatars[clientId] = networkObject;
+                playerData.Avatar = networkObject;
+                spawnIndex++;
+            }
+        }
+
+        public void DespawnAllPlayerAvatars()
+        {
+            if (!IsServer() || NetworkManager.Singleton == null)
+            {
+                return;
+            }
+
+            var keys = new List<ulong>(playerAvatars.Keys);
+            foreach (var clientId in keys)
+            {
+                DespawnPlayerAvatar(clientId);
+            }
+        }
+
         public void SetServerAddress(string ip, ushort port)
         {
             serverIP = ip;
@@ -591,9 +873,44 @@ namespace MOBA.Networking
                 }
             }
         }
-        
+
+        private void DespawnPlayerAvatar(ulong clientId)
+        {
+            if (playerAvatars.TryGetValue(clientId, out var avatar) && avatar != null)
+            {
+                if (avatar.IsSpawned)
+                {
+                    avatar.Despawn(true);
+                }
+
+                Destroy(avatar.gameObject);
+            }
+
+            playerAvatars.Remove(clientId);
+
+            if (connectedPlayers.TryGetValue(clientId, out var data))
+            {
+                data.Avatar = null;
+            }
+        }
+
+        private Transform ResolveSpawnTransform(Transform[] spawnPoints, int spawnCount, int index)
+        {
+            if (spawnPoints == null || spawnCount == 0)
+            {
+                return null;
+            }
+
+            if (index < spawnCount)
+            {
+                return spawnPoints[index];
+            }
+
+            return spawnPoints[spawnCount - 1];
+        }
+
         #endregion
-        
+
         private string GetUserFriendlyErrorMessage(NetworkErrorCode code, string details)
         {
             switch (code)
@@ -642,6 +959,8 @@ namespace MOBA.Networking
         public Vector3 LastPosition;
         public float LastMovementTime;
         public int SuspiciousActivityCount;
+        public NetworkObject Avatar;
+        public float LastSuspicionTime;
     }
     
     [System.Serializable]

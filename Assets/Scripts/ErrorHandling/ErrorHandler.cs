@@ -19,12 +19,19 @@ namespace MOBA.ErrorHandling
     private static DateTime lastFlushTime = DateTime.MinValue;
     private static float flushIntervalSeconds = 1.0f; // Flush every 1 second
     private static int maxLogsPerFlush = 10; // Max logs written per flush
+    private static System.Timers.Timer flushTimer;
         /// <summary>
         /// Cleans up static event subscriptions (call on application quit or domain reload).
         /// </summary>
         public static void Dispose()
         {
             Application.logMessageReceived -= OnUnityLogMessage;
+            if (flushTimer != null)
+            {
+                flushTimer.Elapsed -= OnFlushTimerElapsed;
+                flushTimer.Dispose();
+                flushTimer = null;
+            }
             isInitialized = false;
         }
         private static List<ErrorLog> errorHistory = new List<ErrorLog>();
@@ -75,10 +82,21 @@ namespace MOBA.ErrorHandling
             Application.logMessageReceived += OnUnityLogMessage;
 
             // Start periodic flush (Unity update not available in static, so use timer)
-            System.Timers.Timer flushTimer = new System.Timers.Timer(flushIntervalSeconds * 1000f);
-            flushTimer.Elapsed += (s, e) => FlushLogBuffer();
-            flushTimer.AutoReset = true;
-            flushTimer.Start();
+            if (flushTimer == null)
+            {
+                flushTimer = new System.Timers.Timer(flushIntervalSeconds * 1000f);
+                flushTimer.Elapsed += OnFlushTimerElapsed;
+                flushTimer.AutoReset = true;
+                flushTimer.Start();
+            }
+            else
+            {
+                flushTimer.Interval = flushIntervalSeconds * 1000f;
+                if (!flushTimer.Enabled)
+                {
+                    flushTimer.Start();
+                }
+            }
 
             isInitialized = true;
             LogInfo("ErrorHandler", "Error handling system initialized");
@@ -371,6 +389,11 @@ namespace MOBA.ErrorHandling
                 WriteToLogFileBatch(logsToWrite);
                 lastFlushTime = DateTime.Now;
             }
+        }
+
+        private static void OnFlushTimerElapsed(object sender, System.Timers.ElapsedEventArgs e)
+        {
+            FlushLogBuffer();
         }
         
         private static void LogToConsole(ErrorLog errorLog)

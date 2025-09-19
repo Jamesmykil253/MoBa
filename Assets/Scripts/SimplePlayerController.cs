@@ -12,7 +12,7 @@ namespace MOBA
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
     [RequireComponent(typeof(PlayerInput))]
-    public class SimplePlayerController : MonoBehaviour, IDamageable
+    public class SimplePlayerController : MonoBehaviour, IDamageable, IDamageSnapshotReceiver
     {
         [Header("Movement")]
         [SerializeField] private UnifiedMovementSystem movementSystem = new UnifiedMovementSystem();
@@ -30,6 +30,16 @@ namespace MOBA
         [SerializeField] private float respawnDelay = 3f;
         [SerializeField] private Transform respawnPoint;
 
+        [Header("Team")]
+        [Tooltip("Team index used for scoring and team-based logic.")]
+        [SerializeField] private int teamIndex = 0;
+
+        [Header("Jump Settings")]
+        [SerializeField, Tooltip("Time in seconds the jump button must be held before the hold boost activates.")]
+        private float holdJumpWarmup = 0.2f;
+        [SerializeField, Tooltip("Maximum time window to trigger the hold boost after pressing jump.")]
+        private float holdJumpMaxDuration = 0.35f;
+
         private Rigidbody body;
         private PlayerInput playerInput;
         private EnhancedAbilitySystem enhancedAbilitySystem;
@@ -46,12 +56,17 @@ namespace MOBA
         private bool inputActive = true;
         private Vector3 initialSpawnPosition;
         private Coroutine respawnRoutine;
+        private bool jumpButtonHeld;
+        private bool holdBoostCandidate;
+        private bool holdBoostApplied;
+        private float jumpButtonPressTime;
 
         public event Action<float, float> HealthChanged;
         public event Action Died;
 
         public float CurrentHealth => currentHealth;
         public float MaxHealth => maxHealth;
+        public int TeamIndex => Mathf.Max(0, teamIndex);
 
         private void Awake()
         {
@@ -100,6 +115,8 @@ namespace MOBA
             var moveVector = new Vector3(moveInput.x, 0f, moveInput.y);
             movementSystem.SetMovementInput(moveVector);
             UpdateDesiredOrientation(moveVector);
+
+            HandleJumpHoldLogic();
         }
 
         private void FixedUpdate()
@@ -111,6 +128,11 @@ namespace MOBA
         {
             body.interpolation = RigidbodyInterpolation.Interpolate;
             body.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+        }
+
+        public void SetTeam(int newTeamIndex)
+        {
+            teamIndex = Mathf.Max(0, newTeamIndex);
         }
 
         private void ResolveInputActions()
@@ -144,6 +166,7 @@ namespace MOBA
             {
                 jumpAction.Enable();
                 jumpAction.started += OnJumpStarted;
+                jumpAction.canceled += OnJumpCanceled;
             }
         }
 
@@ -152,6 +175,7 @@ namespace MOBA
             if (jumpAction != null)
             {
                 jumpAction.started -= OnJumpStarted;
+                jumpAction.canceled -= OnJumpCanceled;
                 jumpAction.Disable();
             }
 
@@ -165,7 +189,69 @@ namespace MOBA
                 return;
             }
 
-            movementSystem.TryJump();
+            var jumpResult = movementSystem.TryExecuteJump();
+
+            if (jumpResult == UnifiedMovementSystem.JumpExecutionResult.Initial)
+            {
+                jumpButtonHeld = true;
+                holdBoostCandidate = true;
+                holdBoostApplied = false;
+                jumpButtonPressTime = Time.time;
+            }
+            else if (jumpResult == UnifiedMovementSystem.JumpExecutionResult.Double)
+            {
+                jumpButtonHeld = true;
+                holdBoostCandidate = false;
+                holdBoostApplied = false;
+            }
+        }
+
+        private void OnJumpCanceled(InputAction.CallbackContext context)
+        {
+            jumpButtonHeld = false;
+
+            if (holdBoostCandidate)
+            {
+                holdBoostCandidate = false;
+                movementSystem.CancelHoldBoostCandidate();
+            }
+        }
+
+        private void HandleJumpHoldLogic()
+        {
+            if (!holdBoostCandidate)
+            {
+                return;
+            }
+
+            if (!movementSystem.IsHoldBoostPending && !holdBoostApplied)
+            {
+                holdBoostCandidate = false;
+                return;
+            }
+
+            if (!jumpButtonHeld)
+            {
+                holdBoostCandidate = false;
+                movementSystem.CancelHoldBoostCandidate();
+                return;
+            }
+
+            float heldDuration = Time.time - jumpButtonPressTime;
+
+            if (!holdBoostApplied && heldDuration >= holdJumpWarmup && heldDuration <= holdJumpMaxDuration)
+            {
+                if (movementSystem.TryApplyHoldBoost())
+                {
+                    holdBoostApplied = true;
+                    holdBoostCandidate = false;
+                }
+            }
+            else if (heldDuration > holdJumpMaxDuration)
+            {
+                holdBoostCandidate = false;
+                movementSystem.CancelHoldBoostCandidate();
+            }
         }
 
         private void UpdateDesiredOrientation(Vector3 movementInput)
@@ -199,6 +285,10 @@ namespace MOBA
                 moveInput = Vector2.zero;
                 moveAction?.Disable();
                 jumpAction?.Disable();
+                jumpButtonHeld = false;
+                holdBoostCandidate = false;
+                holdBoostApplied = false;
+                movementSystem.CancelHoldBoostCandidate();
                 movementSystem.SetMovementInput(Vector3.zero);
                 desiredLook = defaultLookDirection;
             }
@@ -228,6 +318,34 @@ namespace MOBA
 
         public bool IsDead() => isDead;
 
+        public void ApplyServerHealthSnapshot(float health, bool dead)
+        {
+            float clamped = Mathf.Clamp(health, 0f, maxHealth);
+            currentHealth = clamped;
+            HealthChanged?.Invoke(currentHealth, maxHealth);
+
+            if (dead)
+            {
+                if (!isDead)
+                {
+                    if (respawnRoutine != null)
+                    {
+                        StopCoroutine(respawnRoutine);
+                        respawnRoutine = null;
+                    }
+                    isDead = true;
+                    SetInputEnabled(false);
+                    PhysicsUtility.SetVelocity(body, Vector3.zero);
+                    Died?.Invoke();
+                }
+            }
+            else if (isDead)
+            {
+                isDead = false;
+                SetInputEnabled(true);
+            }
+        }
+
         private void HandleDeath()
         {
             if (isDead)
@@ -237,7 +355,7 @@ namespace MOBA
 
             isDead = true;
             SetInputEnabled(false);
-            body.linearVelocity = Vector3.zero;
+            PhysicsUtility.SetVelocity(body, Vector3.zero);
             Died?.Invoke();
 
             if (autoRespawn)
@@ -255,8 +373,15 @@ namespace MOBA
             yield return new WaitForSeconds(respawnDelay);
 
             Vector3 targetPosition = respawnPoint != null ? respawnPoint.position : initialSpawnPosition;
-            transform.position = targetPosition;
-            body.linearVelocity = Vector3.zero;
+            if (movementSystem != null)
+            {
+                movementSystem.WarpTo(targetPosition);
+            }
+            else
+            {
+                transform.position = targetPosition;
+                PhysicsUtility.SetVelocity(body, Vector3.zero);
+            }
 
             currentHealth = maxHealth;
             HealthChanged?.Invoke(currentHealth, maxHealth);

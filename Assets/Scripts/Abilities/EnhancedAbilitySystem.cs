@@ -1,10 +1,12 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using System.Collections.Generic;
-using System.Collections;
-using MOBA;
 using MOBA.Debugging;
 using MOBA.Effects;
+using MOBA.Networking;
 
 namespace MOBA.Abilities
 {
@@ -36,13 +38,20 @@ namespace MOBA.Abilities
         [Header("Input System")]
         [SerializeField] private InputActionAsset inputActions;
         [SerializeField] private string[] abilityActionNames = new[] { "Ability1", "Ability2", "Ability3", "Ability4" };
+        [SerializeField, Tooltip("When enabled the system binds directly to the Input Action Asset. Disable if a legacy handler (e.g. SimpleInputHandler) should own input wiring.")]
+        private bool enableInternalInputActions = true;
 
         // Runtime state
         private float lastCastTime;
         private float lastCombatTime;
         private bool isInCombat = false;
-        private Dictionary<int, float> cooldowns = new Dictionary<int, float>();
-        private Dictionary<int, bool> abilityLocked = new Dictionary<int, bool>(); // For channeling/casting
+        private readonly Dictionary<int, float> cooldowns = new Dictionary<int, float>();
+        private readonly Dictionary<int, bool> abilityLocked = new Dictionary<int, bool>(); // For channeling/casting
+        private readonly List<int> cooldownKeyCache = new List<int>(8);
+        private AbilityNetworkController networkBridge;
+
+        // Hit result buffers are pooled to avoid per-cast allocations.
+        private readonly Stack<List<AbilityHitResult>> serverHitBufferPool = new Stack<List<AbilityHitResult>>();
 
         // Stats modifiers
         private float currentCooldownReduction = 0f;
@@ -50,7 +59,6 @@ namespace MOBA.Abilities
         // Input state
         private InputAction[] abilityInputActions;
         private System.Action<InputAction.CallbackContext>[] abilityActionHandlers;
-        private bool hasInputActions;
         private bool inputActionsInitialized;
         private bool inputEnabled = true;
         
@@ -89,11 +97,29 @@ namespace MOBA.Abilities
                 actor: gameObject != null ? gameObject.name : null);
         }
         
+        internal void AttachNetworkBridge(AbilityNetworkController bridge)
+        {
+            networkBridge = bridge;
+        }
+
+        internal void DetachNetworkBridge(AbilityNetworkController bridge)
+        {
+            if (networkBridge == bridge)
+            {
+                networkBridge = null;
+            }
+        }
+        
         #region Unity Lifecycle
         
         void Awake()
         {
+            DetectLegacyInputHandler();
             InitializeInputActions();
+            if (networkBridge == null)
+            {
+                networkBridge = GetComponent<AbilityNetworkController>();
+            }
         }
 
         void OnEnable()
@@ -190,18 +216,29 @@ namespace MOBA.Abilities
         
         private void UpdateCooldowns()
         {
-            var keys = new List<int>(cooldowns.Keys);
-            foreach (var key in keys)
+            if (cooldowns.Count == 0)
             {
-                if (cooldowns[key] > 0)
+                return;
+            }
+
+            cooldownKeyCache.Clear();
+            cooldownKeyCache.AddRange(cooldowns.Keys);
+
+            float deltaTime = Time.deltaTime;
+
+            for (int i = 0; i < cooldownKeyCache.Count; i++)
+            {
+                int key = cooldownKeyCache[i];
+                if (!cooldowns.TryGetValue(key, out float remaining) || remaining <= 0f)
                 {
-                    float previousCooldown = cooldowns[key];
-                    cooldowns[key] = Mathf.Max(0f, cooldowns[key] - Time.deltaTime);
-                    
-                    if (cooldowns[key] != previousCooldown)
-                    {
-                        OnCooldownUpdate?.Invoke(key, cooldowns[key]);
-                    }
+                    continue;
+                }
+
+                float updated = Mathf.Max(0f, remaining - deltaTime);
+                if (!Mathf.Approximately(updated, remaining))
+                {
+                    cooldowns[key] = updated;
+                    OnCooldownUpdate?.Invoke(key, updated);
                 }
             }
         }
@@ -250,100 +287,249 @@ namespace MOBA.Abilities
         
         public bool TryCastAbility(int abilityIndex)
         {
-            if (!CanCastAbility(abilityIndex))
+            Vector3 targetPosition = transform.position;
+            Vector3 targetDirection = transform.forward;
+
+            var precheck = ValidateAbilityCast(abilityIndex);
+            if (networkBridge != null && networkBridge.IsSpawned)
             {
-                if (abilityIndex >= 0 && abilityIndex < abilities.Length && abilities[abilityIndex] != null)
+                if (precheck != AbilityFailureCode.None && !networkBridge.HasNetworkAuthority)
                 {
-                    var ability = abilities[abilityIndex];
-                    if (!HasMana(ability.manaCost))
-                    {
-                        GameDebug.LogWarning(
-                            BuildContext(GameDebugMechanicTag.Resource),
-                            "Insufficient mana to cast ability.",
-                            ("Ability", ability.abilityName),
-                            ("Required", ability.manaCost),
-                            ("Current", currentMana));
-                        // Optionally, trigger a UI event or sound here
-                    }
+                    HandleLocalAbilityFailure(abilityIndex, precheck);
+                    return false;
                 }
+
+                return networkBridge.RequestAbilityCast(abilityIndex, targetPosition, targetDirection);
+            }
+
+            if (precheck != AbilityFailureCode.None)
+            {
+                HandleLocalAbilityFailure(abilityIndex, precheck);
                 return false;
             }
-            var ab = abilities[abilityIndex];
-            return StartCoroutine(CastAbilityCoroutine(abilityIndex, ab)) != null;
+
+            var request = new AbilityCastRequest
+            {
+                RequestId = 0,
+                AbilityIndex = (ushort)Mathf.Max(0, abilityIndex),
+                TargetPosition = targetPosition,
+                TargetDirection = targetDirection
+            };
+
+            HandleAbilityCastRequest(request, NetworkManager.Singleton != null ? NetworkManager.Singleton.LocalClientId : 0);
+            return true;
         }
         
         public bool CanCastAbility(int abilityIndex)
         {
-            if (abilityIndex < 0 || abilityIndex >= abilities.Length) return false;
-            if (abilities[abilityIndex] == null) return false;
-            
-            var ability = abilities[abilityIndex];
-            
-            // Check global cooldown
-            if (Time.time - lastCastTime < globalCooldown) return false;
-            
-            // Check ability cooldown
-            if (cooldowns[abilityIndex] > 0) return false;
-            
-            // Check mana cost
-            if (!HasMana(ability.manaCost)) return false;
-            
-            // Check if ability is locked (channeling)
-            if (abilityLocked[abilityIndex]) return false;
-            
-            return true;
+            return ValidateAbilityCast(abilityIndex) == AbilityFailureCode.None;
         }
-        
-        private IEnumerator CastAbilityCoroutine(int abilityIndex, EnhancedAbility ability)
+
+        private AbilityFailureCode ValidateAbilityCast(int abilityIndex)
         {
-            // Lock the ability
+            if (abilityIndex < 0 || abilityIndex >= abilities.Length)
+            {
+                return AbilityFailureCode.InvalidAbility;
+            }
+
+            var ability = abilities[abilityIndex];
+            if (ability == null)
+            {
+                return AbilityFailureCode.InvalidAbility;
+            }
+
+            if (abilityLocked.TryGetValue(abilityIndex, out bool locked) && locked)
+            {
+                return AbilityFailureCode.AbilityLocked;
+            }
+
+            if (cooldowns.TryGetValue(abilityIndex, out float cooldownRemaining) && cooldownRemaining > 0f)
+            {
+                return AbilityFailureCode.OnCooldown;
+            }
+
+            if (Time.time - lastCastTime < globalCooldown)
+            {
+                return AbilityFailureCode.GlobalCooldown;
+            }
+
+            if (!HasMana(ability.manaCost))
+            {
+                return AbilityFailureCode.InsufficientMana;
+            }
+
+            return AbilityFailureCode.None;
+        }
+
+        private void HandleLocalAbilityFailure(int abilityIndex, AbilityFailureCode failureCode)
+        {
+            if (failureCode == AbilityFailureCode.None)
+            {
+                return;
+            }
+
+            if (abilityIndex < 0 || abilityIndex >= abilities.Length)
+            {
+                return;
+            }
+
+            var ability = abilities[abilityIndex];
+            if (ability == null)
+            {
+                return;
+            }
+
+            switch (failureCode)
+            {
+                case AbilityFailureCode.InsufficientMana:
+                    GameDebug.LogWarning(
+                        BuildContext(GameDebugMechanicTag.Resource),
+                        "Insufficient mana to cast ability.",
+                        ("Ability", ability.abilityName),
+                        ("Required", ability.manaCost),
+                        ("Current", currentMana));
+                    break;
+                case AbilityFailureCode.OnCooldown:
+                    GameDebug.LogWarning(
+                        BuildContext(GameDebugMechanicTag.Cooldown),
+                        "Ability on cooldown.",
+                        ("Ability", ability.abilityName));
+                    break;
+                case AbilityFailureCode.GlobalCooldown:
+                    GameDebug.LogWarning(
+                        BuildContext(GameDebugMechanicTag.Cooldown),
+                        "Global cooldown active.",
+                        ("Ability", ability.abilityName));
+                    break;
+                case AbilityFailureCode.AbilityLocked:
+                    GameDebug.LogWarning(
+                        BuildContext(GameDebugMechanicTag.Cooldown),
+                        "Ability is currently channeling.",
+                        ("Ability", ability.abilityName));
+                    break;
+                default:
+                    GameDebug.LogWarning(
+                        BuildContext(GameDebugMechanicTag.Validation),
+                        "Ability cast rejected.",
+                        ("Ability", ability.abilityName),
+                        ("Reason", failureCode));
+                    break;
+            }
+        }
+
+        internal void HandleAbilityCastRequest(AbilityCastRequest request, ulong senderClientId)
+        {
+            int abilityIndex = request.AbilityIndex;
+            var failure = ValidateAbilityCast(abilityIndex);
+
+            if (failure != AbilityFailureCode.None)
+            {
+                var failureResult = AbilityCastResult.CreateFailure(request.RequestId, abilityIndex, failure, currentMana);
+                if (networkBridge != null && networkBridge.HasNetworkAuthority)
+                {
+                    networkBridge.NotifyAbilityCastResult(failureResult);
+                }
+                else
+                {
+                    ApplyAbilityResult(failureResult, true);
+                }
+                return;
+            }
+
+            var ability = abilities[abilityIndex];
+            StartCoroutine(ServerCastAbilityCoroutine(request, ability, senderClientId));
+        }
+
+        private IEnumerator ServerCastAbilityCoroutine(AbilityCastRequest request, EnhancedAbility ability, ulong senderClientId)
+        {
+            int abilityIndex = request.AbilityIndex;
             abilityLocked[abilityIndex] = true;
-            
-            // Consume mana
+
             if (!ConsumeMana(ability.manaCost))
             {
-                GameDebug.LogWarning(
-                    BuildContext(GameDebugMechanicTag.Resource),
-                    "Failed to consume mana for ability; aborting cast.",
-                    ("Ability", ability.abilityName));
                 abilityLocked[abilityIndex] = false;
+                var failureResult = AbilityCastResult.CreateFailure(request.RequestId, abilityIndex, AbilityFailureCode.InsufficientMana, currentMana);
+                if (networkBridge != null && networkBridge.HasNetworkAuthority)
+                {
+                    networkBridge.NotifyAbilityCastResult(failureResult);
+                }
+                else
+                {
+                    ApplyAbilityResult(failureResult, true);
+                }
                 yield break;
             }
-            
-            // Enter combat
+
             EnterCombat();
-            
-            // Cast time delay
-            if (ability.castTime > 0)
+
+            if (ability.castTime > 0f)
             {
                 yield return new WaitForSeconds(ability.castTime);
             }
-            
-            // Execute ability effect
-            ExecuteAbilityEffect(abilityIndex, ability);
-            
-            // Set cooldown
+
+            var hitBuffer = RentHitBuffer();
+            ExecuteAbilityEffect(abilityIndex, ability, hitBuffer);
+
             float modifiedCooldown = GetModifiedCooldown(ability.cooldown);
             cooldowns[abilityIndex] = modifiedCooldown;
             lastCastTime = Time.time;
-            
-            // Unlock ability
             abilityLocked[abilityIndex] = false;
-            
-            // Trigger events
+
             OnAbilityCast?.Invoke(abilityIndex);
             OnCooldownUpdate?.Invoke(abilityIndex, cooldowns[abilityIndex]);
-            
-            GameDebug.Log(
-                BuildContext(GameDebugMechanicTag.AbilityUse),
-                "Ability cast executed.",
-                ("Ability", ability.abilityName),
-                ("Damage", ability.damage),
-                ("Range", ability.range),
-                ("Mana", $"{currentMana}/{maxMana}"));
+
+            var result = AbilityCastResult.CreateSuccess(request.RequestId, abilityIndex, currentMana, modifiedCooldown, globalCooldown, hitBuffer);
+            if (networkBridge != null && networkBridge.HasNetworkAuthority)
+            {
+                networkBridge.NotifyAbilityCastResult(result);
+            }
+            else
+            {
+                ApplyAbilityResult(result, true);
+            }
+
+            ReturnHitBuffer(hitBuffer);
         }
-        
-        private void ExecuteAbilityEffect(int abilityIndex, EnhancedAbility ability)
+
+        internal void ApplyAbilityResult(AbilityCastResult result, bool isServerAuthority)
+        {
+            int abilityIndex = result.AbilityIndex;
+            var ability = abilityIndex >= 0 && abilityIndex < abilities.Length ? abilities[abilityIndex] : null;
+
+            if (result.Approved)
+            {
+                currentMana = result.CurrentMana;
+                OnManaChanged?.Invoke(currentMana, maxMana);
+
+                cooldowns[abilityIndex] = result.CooldownSeconds;
+                if (!isServerAuthority)
+                {
+                    OnCooldownUpdate?.Invoke(abilityIndex, cooldowns[abilityIndex]);
+                }
+
+                lastCastTime = Time.time;
+
+                if (!isServerAuthority)
+                {
+                    EnterCombat();
+                    OnAbilityCast?.Invoke(abilityIndex);
+
+                    if (ability != null)
+                    {
+                        CreateCastEffect(ability);
+                        UnifiedEventSystem.PublishLocal(new AbilityUsedEvent(
+                            gameObject, ability.abilityName, ability.manaCost, ability.cooldown,
+                            transform.position, null));
+                    }
+                }
+            }
+            else if (!isServerAuthority)
+            {
+                HandleLocalAbilityFailure(abilityIndex, result.FailureCode);
+            }
+        }
+
+        private void ExecuteAbilityEffect(int abilityIndex, EnhancedAbility ability, List<AbilityHitResult> hitBuffer = null)
         {
             // Apply damage to enemies in range
             int numTargets = Physics.OverlapSphereNonAlloc(transform.position, ability.range, overlapBuffer);
@@ -357,6 +543,20 @@ namespace MOBA.Abilities
                     if (damageable != null)
                     {
                         damageable.TakeDamage(ability.damage);
+                        if (hitBuffer != null)
+                        {
+                            var networkObject = target.GetComponent<NetworkObject>();
+                            if (networkObject != null)
+                            {
+                                hitBuffer.Add(new AbilityHitResult
+                                {
+                                    TargetNetworkId = networkObject.NetworkObjectId,
+                                    AppliedDamage = ability.damage,
+                                    RemainingHealth = damageable.GetHealth(),
+                                    IsDead = damageable.IsDead()
+                                });
+                            }
+                        }
                         hitCount++;
                         // Create hit effect
                         CreateHitEffect(target.transform.position);
@@ -368,15 +568,43 @@ namespace MOBA.Abilities
             
             // Create cast effect
             CreateCastEffect(ability);
-            
-            // Publish ability used event
             UnifiedEventSystem.PublishLocal(new AbilityUsedEvent(
-                gameObject, ability.abilityName, ability.manaCost, ability.cooldown, 
+                gameObject, ability.abilityName, ability.manaCost, ability.cooldown,
                 transform.position, null));
         }
-        
+
         #endregion
-        
+
+        private List<AbilityHitResult> RentHitBuffer()
+        {
+            if (serverHitBufferPool.Count > 0)
+            {
+                var buffer = serverHitBufferPool.Pop();
+                buffer.Clear();
+                return buffer;
+            }
+
+            return new List<AbilityHitResult>(8);
+        }
+
+        private void ReturnHitBuffer(List<AbilityHitResult> buffer)
+        {
+            if (buffer == null)
+            {
+                return;
+            }
+
+            buffer.Clear();
+
+            // Clamp capacity to avoid unbounded growth if a large hit list occurs once.
+            if (buffer.Capacity > 128)
+            {
+                buffer.Capacity = 128;
+            }
+
+            serverHitBufferPool.Push(buffer);
+        }
+
         #region Effects
         
         private void CreateCastEffect(EnhancedAbility ability)
@@ -391,13 +619,13 @@ namespace MOBA.Abilities
                     5,
                     0.75f,
                     0.1f,
-                    transform.root);
+                    null);
             }
         }
 
         private void CreateHitEffect(Vector3 position)
         {
-            EffectPoolService.SpawnSphereEffect(position, Color.red, 0.3f, 0.4f, transform.root);
+            EffectPoolService.SpawnSphereEffect(position, Color.red, 0.3f, 0.4f, null);
         }
         
         #endregion
@@ -440,6 +668,8 @@ namespace MOBA.Abilities
                 return;
             }
             // Dynamically resize array if needed
+            bool resized = false;
+
             if (abilityIndex >= abilities.Length)
             {
                 int oldLen = abilities.Length;
@@ -450,8 +680,14 @@ namespace MOBA.Abilities
                     cooldowns[i] = 0f;
                     abilityLocked[i] = false;
                 }
+                resized = true;
             }
             abilities[abilityIndex] = ability;
+
+            if (resized)
+            {
+                HandleAbilityLayoutChanged();
+            }
         }
 
         public void RemoveAbility(int abilityIndex)
@@ -467,6 +703,7 @@ namespace MOBA.Abilities
             abilities[abilityIndex] = null;
             cooldowns[abilityIndex] = 0f;
             abilityLocked[abilityIndex] = false;
+            HandleAbilityLayoutChanged();
         }
 
         public int AddAbility(EnhancedAbility ability)
@@ -486,6 +723,7 @@ namespace MOBA.Abilities
             abilities[newIndex] = ability;
             cooldowns[newIndex] = 0f;
             abilityLocked[newIndex] = false;
+            HandleAbilityLayoutChanged();
             return newIndex;
         }
         
@@ -519,10 +757,97 @@ namespace MOBA.Abilities
 
         private void InitializeInputActions()
         {
-            if (inputActionsInitialized)
+            if (!enableInternalInputActions)
             {
                 return;
             }
+
+            if (abilities == null)
+            {
+                abilities = new EnhancedAbility[4];
+            }
+
+            if (abilityActionNames == null || abilityActionNames.Length == 0)
+            {
+                abilityActionNames = new[] { "Ability1", "Ability2", "Ability3", "Ability4" };
+            }
+
+            if (inputActions == null)
+            {
+                var playerInput = GetComponentInParent<PlayerInput>();
+                if (playerInput != null)
+                {
+                    inputActions = playerInput.actions;
+                }
+            }
+
+            if (inputActionsInitialized)
+            {
+                HandleAbilityLayoutChanged();
+                return;
+            }
+
+            inputActionsInitialized = true;
+            RebuildAbilityInputBindings();
+        }
+
+        private void ApplyInputActionState(bool enable)
+        {
+            if (!enableInternalInputActions || abilityInputActions == null)
+            {
+                return;
+            }
+
+            foreach (var action in abilityInputActions)
+            {
+                if (action == null) continue;
+                if (enable)
+                {
+                    if (!action.enabled)
+                    {
+                        action.Enable();
+                    }
+                }
+                else if (action.enabled)
+                {
+                    action.Disable();
+                }
+            }
+        }
+
+        private void CleanupInputActions()
+        {
+            if (!enableInternalInputActions)
+            {
+                abilityInputActions = null;
+                abilityActionHandlers = null;
+                return;
+            }
+
+            if (abilityInputActions != null && abilityActionHandlers != null)
+            {
+                int length = Mathf.Min(abilityInputActions.Length, abilityActionHandlers.Length);
+                for (int i = 0; i < length; i++)
+                {
+                    if (abilityInputActions[i] != null && abilityActionHandlers[i] != null)
+                    {
+                        abilityInputActions[i].performed -= abilityActionHandlers[i];
+                    }
+                }
+            }
+
+            abilityInputActions = null;
+            abilityActionHandlers = null;
+        }
+
+        private void RebuildAbilityInputBindings()
+        {
+            if (!enableInternalInputActions)
+            {
+                return;
+            }
+
+            CleanupInputActions();
 
             if (abilities == null)
             {
@@ -547,93 +872,86 @@ namespace MOBA.Abilities
             abilityInputActions = new InputAction[abilityCount];
             abilityActionHandlers = new System.Action<InputAction.CallbackContext>[abilityCount];
 
-            if (inputActions != null)
-            {
-                int mappedCount = Mathf.Min(abilityActionNames.Length, abilityCount);
-                for (int i = 0; i < mappedCount; i++)
-                {
-                    string actionName = abilityActionNames[i];
-                    if (string.IsNullOrEmpty(actionName))
-                    {
-                        continue;
-                    }
-
-                    var action = inputActions.FindAction(actionName, throwIfNotFound: false);
-                    if (action == null)
-                    {
-                        GameDebug.LogWarning(
-                            BuildContext(GameDebugMechanicTag.Input),
-                            "Input action not found for enhanced ability binding.",
-                            ("Action", actionName));
-                        continue;
-                    }
-
-                    abilityInputActions[i] = action;
-                    int abilityIndex = i;
-                    abilityActionHandlers[i] = ctx =>
-                    {
-                        if (!inputEnabled || !isActiveAndEnabled)
-                        {
-                            return;
-                        }
-                        TryCastAbility(abilityIndex);
-                    };
-                    action.performed += abilityActionHandlers[i];
-                    hasInputActions = true;
-                }
-            }
-
-            inputActionsInitialized = true;
-        }
-
-        private void ApplyInputActionState(bool enable)
-        {
-            if (!hasInputActions || abilityInputActions == null)
+            if (inputActions == null)
             {
                 return;
             }
 
-            foreach (var action in abilityInputActions)
+            for (int i = 0; i < abilityCount; i++)
             {
-                if (action == null) continue;
-                if (enable)
+                if (abilityActionNames == null || i >= abilityActionNames.Length)
                 {
-                    if (!action.enabled)
-                    {
-                        action.Enable();
-                    }
+                    GameDebug.LogWarning(
+                        BuildContext(GameDebugMechanicTag.Input),
+                        "No input action configured for ability slot.",
+                        ("Slot", i));
+                    continue;
                 }
-                else if (action.enabled)
-                {
-                    action.Disable();
-                }
-            }
-        }
 
-        private void CleanupInputActions()
-        {
-            if (!hasInputActions || abilityInputActions == null)
-            {
-                return;
-            }
+                string actionName = abilityActionNames[i];
 
-            for (int i = 0; i < abilityInputActions.Length; i++)
-            {
-                if (abilityInputActions[i] == null || abilityActionHandlers == null)
+                if (string.IsNullOrEmpty(actionName))
                 {
                     continue;
                 }
 
-                if (abilityActionHandlers.Length > i && abilityActionHandlers[i] != null)
+                var action = inputActions.FindAction(actionName, throwIfNotFound: false);
+                if (action == null)
                 {
-                    abilityInputActions[i].performed -= abilityActionHandlers[i];
+                    GameDebug.LogWarning(
+                        BuildContext(GameDebugMechanicTag.Input),
+                        "Input action not found for enhanced ability binding.",
+                        ("Action", actionName));
+                    continue;
                 }
+
+                abilityInputActions[i] = action;
+                int abilityIndex = i;
+                abilityActionHandlers[i] = ctx =>
+                {
+                    if (!inputEnabled || !isActiveAndEnabled)
+                    {
+                        return;
+                    }
+                    TryCastAbility(abilityIndex);
+                };
+                action.performed += abilityActionHandlers[i];
             }
 
-            hasInputActions = false;
+            ApplyInputActionState(inputEnabled);
+        }
+
+        private void HandleAbilityLayoutChanged()
+        {
+            if (!enableInternalInputActions || !inputActionsInitialized)
+            {
+                return;
+            }
+
+            if (abilityInputActions != null && abilityInputActions.Length == abilities.Length)
+            {
+                return;
+            }
+
+            RebuildAbilityInputBindings();
         }
 
         #endregion
+
+        private void DetectLegacyInputHandler()
+        {
+            if (!enableInternalInputActions)
+            {
+                return;
+            }
+
+            if (TryGetComponent<SimpleInputHandler>(out _))
+            {
+                enableInternalInputActions = false;
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Input),
+                    "Detected SimpleInputHandler; internal input bindings disabled to avoid duplicate listeners.");
+            }
+        }
 
         #region External Combat Triggers
 

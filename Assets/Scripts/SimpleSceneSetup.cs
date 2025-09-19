@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine.InputSystem;
@@ -34,22 +35,36 @@ namespace MOBA
         [SerializeField] private GameObject groundPrefab;
         [SerializeField] private Vector3 groundScale = new Vector3(20, 1, 20);
 
-        void Start()
+        private bool sceneSetupPerformed;
+
+        IEnumerator Start()
         {
-            if (autoStart)
+            if (!autoStart)
             {
-                SetupScene();
+                yield break;
             }
+
+            yield return null;
+            SetupScene();
         }
 
         [ContextMenu("Setup Scene")]
         public void SetupScene()
         {
+            if (sceneSetupPerformed)
+            {
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Initialization),
+                    "SetupScene called multiple times; ignoring subsequent request.");
+                return;
+            }
+
+            sceneSetupPerformed = true;
+
             CreateGround();
             CreatePlayer();
             CreateGameManager();
             CreateCamera();
-            
+
             if (includeNetworking)
             {
                 CreateNetworkManager();
@@ -143,10 +158,25 @@ namespace MOBA
                 return;
             }
 
-            var networkManagerObj = new GameObject("Network Manager");
-            networkManagerObj.AddComponent<NetworkManager>();
-            networkManagerObj.AddComponent<UnityTransport>();
-            networkManagerObj.AddComponent<SimpleNetworkManager>();
+            if (!NetworkBootstrapGuard.TryReserve(out var guardReason))
+            {
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Initialization),
+                    "Skipped automatic network manager creation.",
+                    ("Reason", guardReason));
+                return;
+            }
+
+            try
+            {
+                var networkManagerObj = new GameObject("Network Manager");
+                networkManagerObj.AddComponent<NetworkManager>();
+                networkManagerObj.AddComponent<UnityTransport>();
+                networkManagerObj.AddComponent<SimpleNetworkManager>();
+            }
+            finally
+            {
+                NetworkBootstrapGuard.Release();
+            }
         }
 
         void CreateUI()

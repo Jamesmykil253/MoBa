@@ -11,7 +11,7 @@ namespace MOBA.Effects
     {
         [SerializeField] private Renderer targetRenderer;
 
-        private readonly MaterialPropertyBlock propertyBlock = new MaterialPropertyBlock();
+        private MaterialPropertyBlock propertyBlock;
         private Coroutine lifetimeRoutine;
 
         private void Awake()
@@ -20,10 +20,20 @@ namespace MOBA.Effects
             {
                 targetRenderer = GetComponent<Renderer>();
             }
+
+            if (propertyBlock == null)
+            {
+                propertyBlock = new MaterialPropertyBlock();
+            }
         }
 
         public void Play(Action releaseAction, float lifetimeSeconds, Color tint, Vector3 worldScale)
         {
+            if (propertyBlock == null)
+            {
+                propertyBlock = new MaterialPropertyBlock();
+            }
+
             if (targetRenderer != null)
             {
                 targetRenderer.GetPropertyBlock(propertyBlock);

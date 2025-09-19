@@ -154,6 +154,7 @@ namespace MOBA
         public class ComponentPool<T> : IObjectPool, IDisposable where T : Component
         {
         private readonly Queue<T> availableObjects = new();
+        private readonly HashSet<T> availableLookup = new();
         private readonly List<T> allObjects = new();
         private readonly T prefab;
         private readonly int maxSize;
@@ -181,6 +182,7 @@ namespace MOBA
             if (availableObjects.Count > 0)
             {
                 obj = availableObjects.Dequeue();
+                availableLookup.Remove(obj);
             }
             else
             {
@@ -199,7 +201,7 @@ namespace MOBA
             if (disposed || obj == null) return;
 
             obj.gameObject.SetActive(false);
-            if (!availableObjects.Contains(obj))
+            if (availableLookup.Add(obj))
             {
                 availableObjects.Enqueue(obj);
             }
@@ -241,6 +243,7 @@ namespace MOBA
                 }
             }
             availableObjects.Clear();
+            availableLookup.Clear();
             allObjects.Clear();
         }
 
@@ -249,7 +252,11 @@ namespace MOBA
             foreach (var obj in allObjects)
             {
                 if (obj == null) continue;
-                Return(obj);
+                obj.gameObject.SetActive(false);
+                if (availableLookup.Add(obj))
+                {
+                    availableObjects.Enqueue(obj);
+                }
             }
         }
 
@@ -269,6 +276,7 @@ namespace MOBA
         public class GameObjectPool : IObjectPool
         {
         private readonly Queue<GameObject> availableObjects = new();
+        private readonly HashSet<GameObject> availableLookup = new();
         private readonly List<GameObject> allObjects = new();
         private readonly GameObject prefab;
         private readonly int maxSize;
@@ -293,6 +301,7 @@ namespace MOBA
             if (availableObjects.Count > 0)
             {
                 obj = availableObjects.Dequeue();
+                availableLookup.Remove(obj);
             }
             else
             {
@@ -311,7 +320,7 @@ namespace MOBA
             if (obj == null) return;
 
             obj.SetActive(false);
-            if (!availableObjects.Contains(obj))
+            if (availableLookup.Add(obj))
             {
                 availableObjects.Enqueue(obj);
             }
@@ -344,6 +353,7 @@ namespace MOBA
                 }
             }
             availableObjects.Clear();
+            availableLookup.Clear();
             allObjects.Clear();
         }
 
@@ -352,7 +362,11 @@ namespace MOBA
             foreach (var obj in allObjects)
             {
                 if (obj == null) continue;
-                Return(obj);
+                obj.SetActive(false);
+                if (availableLookup.Add(obj))
+                {
+                    availableObjects.Enqueue(obj);
+                }
             }
         }
         }
@@ -363,6 +377,7 @@ namespace MOBA
         public class NetworkObjectPool : IObjectPool
         {
         private readonly Queue<GameObject> availableObjects = new();
+        private readonly HashSet<GameObject> availableLookup = new();
         private readonly List<GameObject> allObjects = new();
         private readonly GameObject prefab;
         private readonly int maxSize;
@@ -389,6 +404,7 @@ namespace MOBA
             if (availableObjects.Count > 0)
             {
                 obj = availableObjects.Dequeue();
+                availableLookup.Remove(obj);
             }
             else
             {
@@ -427,7 +443,7 @@ namespace MOBA
             }
 
             obj.SetActive(false);
-            if (!availableObjects.Contains(obj))
+            if (availableLookup.Add(obj))
             {
                 availableObjects.Enqueue(obj);
             }
@@ -469,6 +485,7 @@ namespace MOBA
                 }
             }
             availableObjects.Clear();
+            availableLookup.Clear();
             allObjects.Clear();
         }
 
@@ -477,7 +494,11 @@ namespace MOBA
             foreach (var obj in allObjects)
             {
                 if (obj == null) continue;
-                Return(obj);
+                obj.SetActive(false);
+                if (availableLookup.Add(obj))
+                {
+                    availableObjects.Enqueue(obj);
+                }
             }
         }
         }

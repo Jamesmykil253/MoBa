@@ -24,6 +24,8 @@ namespace MOBA
         [SerializeField] private Transform poolParent;
 
         private UnifiedObjectPool.ComponentPool<Projectile> projectilePool;
+        private GameObject runtimePrefabInstance;
+        private Projectile runtimeProjectileTemplate;
 
         private GameDebugContext BuildContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.General)
         {
@@ -37,11 +39,8 @@ namespace MOBA
 
         private void Awake()
         {
-            // Validate prefab assignment
-            if (projectilePrefab == null)
+            if (!TryInitializeRuntimeTemplate())
             {
-                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
-                    "Projectile prefab not assigned; disabling pool.");
                 enabled = false;
                 return;
             }
@@ -51,87 +50,87 @@ namespace MOBA
                 poolParent = transform;
             }
 
-            // Fix the prefab before creating the pool
-            FixProjectilePrefab();
+            projectilePool = UnifiedObjectPool.GetComponentPool<Projectile>(
+                $"ProjectilePool_{GetInstanceID()}",
+                runtimeProjectileTemplate,
+                initialPoolSize,
+                Mathf.Max(initialPoolSize, 100),
+                poolParent);
 
-            // Create the pool using UnifiedObjectPool system
-            var projectileComponent = projectilePrefab.GetComponent<Projectile>();
-            if (projectileComponent != null)
+            if (projectilePool != null)
             {
-                projectilePool = UnifiedObjectPool.GetComponentPool<Projectile>(
-                    $"ProjectilePool_{GetInstanceID()}",
-                    projectileComponent,
-                    initialPoolSize,
-                    Mathf.Max(initialPoolSize, 100),
-                    poolParent != null ? poolParent : transform);
-                if (projectilePool != null)
-                {
-                    GameDebug.Log(BuildContext(GameDebugMechanicTag.Initialization),
-                        "Projectile pool initialized via UnifiedObjectPool.",
-                        ("InitialSize", initialPoolSize));
-                }
-                else
-                {
-                    GameDebug.LogError(BuildContext(GameDebugMechanicTag.Initialization),
-                        "Failed to create projectile pool via UnifiedObjectPool.");
-                    enabled = false;
-                }
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Initialization),
+                    "Projectile pool initialized via UnifiedObjectPool.",
+                    ("InitialSize", initialPoolSize));
             }
             else
             {
                 GameDebug.LogError(BuildContext(GameDebugMechanicTag.Initialization),
-                    "Projectile component missing on prefab after fix attempt; disabling pool.");
+                    "Failed to create projectile pool via UnifiedObjectPool.");
                 enabled = false;
             }
         }
 
         /// <summary>
-        /// Fixes the projectile prefab to ensure it has all required components
+        /// Attempts to create a runtime clone of the projectile prefab that contains all required components.
         /// </summary>
-        private void FixProjectilePrefab()
+        private bool TryInitializeRuntimeTemplate()
         {
-            if (projectilePrefab == null) return;
-
-            // Clean any missing script references first
-            CleanMissingScripts(projectilePrefab);
-
-            // Ensure Projectile component exists
-            if (projectilePrefab.GetComponent<Projectile>() == null)
+            if (projectilePrefab == null)
             {
-                projectilePrefab.AddComponent<Projectile>();
-                GameDebug.Log(BuildContext(GameDebugMechanicTag.Recovery),
-                    "Added missing Projectile component to prefab.");
+                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Configuration),
+                    "Projectile prefab not assigned; disabling pool.");
+                return false;
             }
 
-            // Ensure Rigidbody component exists
-            Rigidbody rb = projectilePrefab.GetComponent<Rigidbody>();
-            if (rb == null)
+            runtimePrefabInstance = Instantiate(projectilePrefab);
+            runtimePrefabInstance.name = projectilePrefab.name + "_RuntimeTemplate";
+            runtimePrefabInstance.transform.SetParent(null);
+            runtimePrefabInstance.hideFlags = HideFlags.HideAndDontSave;
+            runtimePrefabInstance.SetActive(false);
+            DontDestroyOnLoad(runtimePrefabInstance);
+
+            runtimeProjectileTemplate = runtimePrefabInstance.GetComponent<Projectile>();
+            if (runtimeProjectileTemplate == null)
             {
-                rb = projectilePrefab.AddComponent<Rigidbody>();
-                rb.useGravity = false;
-                rb.constraints = RigidbodyConstraints.FreezeRotation;
-                GameDebug.Log(BuildContext(GameDebugMechanicTag.Recovery),
-                    "Added missing Rigidbody component to projectile prefab.");
+                runtimeProjectileTemplate = runtimePrefabInstance.AddComponent<Projectile>();
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Recovery),
+                    "Projectile prefab missing Projectile component; added dynamically to runtime clone.",
+                    ("Prefab", projectilePrefab.name));
             }
 
-            // Ensure Collider component exists
-            Collider collider = projectilePrefab.GetComponent<Collider>();
-            if (collider == null)
+            var rigidbody = runtimePrefabInstance.GetComponent<Rigidbody>();
+            if (rigidbody == null)
             {
-                SphereCollider sphereCollider = projectilePrefab.AddComponent<SphereCollider>();
-                sphereCollider.isTrigger = true;
-                sphereCollider.radius = 0.1f;
-                GameDebug.Log(BuildContext(GameDebugMechanicTag.Recovery),
-                    "Added missing SphereCollider component to projectile prefab.");
+                rigidbody = runtimePrefabInstance.AddComponent<Rigidbody>();
+                rigidbody.useGravity = false;
+                rigidbody.constraints = RigidbodyConstraints.FreezeRotation;
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Recovery),
+                    "Projectile prefab missing Rigidbody; added to runtime clone.",
+                    ("Prefab", projectilePrefab.name));
             }
             else
             {
-                // Ensure existing collider is a trigger
+                rigidbody.useGravity = false;
+                rigidbody.constraints = RigidbodyConstraints.FreezeRotation;
+            }
+
+            var collider = runtimePrefabInstance.GetComponent<Collider>();
+            if (collider == null)
+            {
+                var sphereCollider = runtimePrefabInstance.AddComponent<SphereCollider>();
+                sphereCollider.isTrigger = true;
+                sphereCollider.radius = 0.1f;
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Recovery),
+                    "Projectile prefab missing Collider; added SphereCollider to runtime clone.",
+                    ("Prefab", projectilePrefab.name));
+            }
+            else
+            {
                 collider.isTrigger = true;
             }
 
-            GameDebug.Log(BuildContext(GameDebugMechanicTag.Recovery),
-                "Projectile prefab dependencies verified.");
+            return runtimeProjectileTemplate != null;
         }
 
         /// <summary>
@@ -212,6 +211,16 @@ namespace MOBA
             projectilePool.ReturnAll();
             GameDebug.Log(BuildContext(GameDebugMechanicTag.Pooling),
                 "All active projectiles returned to pool.");
+        }
+
+        private void OnDestroy()
+        {
+            if (runtimePrefabInstance != null)
+            {
+                Destroy(runtimePrefabInstance);
+                runtimePrefabInstance = null;
+                runtimeProjectileTemplate = null;
+            }
         }
 
     }

@@ -22,7 +22,8 @@ namespace MOBA
         [SerializeField] private int maxPoolSize = 100;
 
         // Shared pool storage for now
-        private readonly Dictionary<UnitType, UnifiedObjectPool.GameObjectPool> unitPools = new();
+        private readonly Dictionary<UnitType, UnifiedObjectPool.GameObjectPool> localUnitPools = new();
+        private readonly Dictionary<UnitType, UnifiedObjectPool.NetworkObjectPool> networkUnitPools = new();
 
         // Unit type enumeration
         public enum UnitType
@@ -63,19 +64,62 @@ namespace MOBA
 
         private void InitializePools()
         {
+            localUnitPools.Clear();
+            networkUnitPools.Clear();
+
             foreach (UnitType unitType in System.Enum.GetValues(typeof(UnitType)))
             {
-                if ((int)unitType < unitPrefabs.Length && unitPrefabs[(int)unitType] != null)
+                if ((int)unitType >= unitPrefabs.Length)
                 {
-                    string poolName = $"UnitFactory_{gameObject.GetInstanceID()}_{unitType}";
-                    var pool = UnifiedObjectPool.GetGameObjectPool(
+                    continue;
+                }
+
+                var prefab = unitPrefabs[(int)unitType];
+                if (prefab == null)
+                {
+                    continue;
+                }
+
+                bool hasNetworkObject = prefab.GetComponent<NetworkObject>() != null;
+                string poolName = $"UnitFactory_{gameObject.GetInstanceID()}_{unitType}";
+
+                if (hasNetworkObject)
+                {
+                    var pool = UnifiedObjectPool.GetNetworkObjectPool(
                         poolName,
-                        unitPrefabs[(int)unitType],
+                        prefab,
                         initialPoolSize,
                         maxPoolSize,
                         spawnParent);
-
-                    unitPools[unitType] = pool;
+                    if (pool != null)
+                    {
+                        networkUnitPools[unitType] = pool;
+                    }
+                    else
+                    {
+                        GameDebug.LogWarning(
+                            BuildContext(GameDebugMechanicTag.Pooling, subsystem: unitType.ToString()),
+                            "Failed to create network object pool; falling back to direct instantiation.");
+                    }
+                }
+                else
+                {
+                    var pool = UnifiedObjectPool.GetGameObjectPool(
+                        poolName,
+                        prefab,
+                        initialPoolSize,
+                        maxPoolSize,
+                        spawnParent);
+                    if (pool != null)
+                    {
+                        localUnitPools[unitType] = pool;
+                    }
+                    else
+                    {
+                        GameDebug.LogWarning(
+                            BuildContext(GameDebugMechanicTag.Pooling, subsystem: unitType.ToString()),
+                            "Failed to create local object pool; falling back to direct instantiation.");
+                    }
                 }
             }
         }
@@ -91,17 +135,40 @@ namespace MOBA
             }
 
             GameObject unit = null;
+            GameObject prefabReference = ((int)type < unitPrefabs.Length) ? unitPrefabs[(int)type] : null;
+            bool isNetworkedPrefab = prefabReference != null && prefabReference.GetComponent<NetworkObject>() != null;
 
-            if (useObjectPooling && unitPools.TryGetValue(type, out var pool) && pool != null)
+            if (isNetworkedPrefab && NetworkManager.Singleton != null && !NetworkManager.Singleton.IsServer)
             {
-                unit = pool.Get();
+                GameDebug.LogWarning(
+                    BuildContext(GameDebugMechanicTag.Spawning, subsystem: type.ToString()),
+                    "Client attempted to create a networked unit directly. This request should be routed through the server.");
+                return null;
             }
-            else
+
+            bool hasNetworkPool = networkUnitPools.TryGetValue(type, out var networkPoolReference);
+
+            if (useObjectPooling)
             {
-                // Fallback to instantiation
-                if ((int)type < unitPrefabs.Length && unitPrefabs[(int)type] != null)
+                if (isNetworkedPrefab && hasNetworkPool)
                 {
-                    unit = Instantiate(unitPrefabs[(int)type], position, rotation, spawnParent);
+                    if (NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer)
+                    {
+                        unit = networkPoolReference?.Get();
+                    }
+                }
+
+                if (unit == null && localUnitPools.TryGetValue(type, out var localPool) && localPool != null)
+                {
+                    unit = localPool.Get();
+                }
+            }
+
+            if (unit == null)
+            {
+                if (prefabReference != null)
+                {
+                    unit = Instantiate(prefabReference, position, rotation, spawnParent);
                 }
             }
 
@@ -119,16 +186,10 @@ namespace MOBA
             // Initialize network components if needed
             if (unit.TryGetComponent(out NetworkObject netObj))
             {
-                // Only spawn if we're the server or if it's a local player object
-                if (IsServer || (!IsClient || IsHost))
+                // Only spawn if we're the server or host; pooled network objects will already be spawned
+                if (!netObj.IsSpawned && (IsServer || (!IsClient || IsHost)))
                 {
                     netObj.Spawn();
-                }
-                else
-                {
-                    GameDebug.Log(BuildContext(GameDebugMechanicTag.Spawning, subsystem: "Local"),
-                        "Created non-networked unit instance.",
-                        ("UnitType", type));
                 }
             }
 
@@ -170,14 +231,33 @@ namespace MOBA
         /// </summary>
         public void ReturnUnit(GameObject unit, UnitType type)
         {
-            if (useObjectPooling && unitPools.TryGetValue(type, out var pool) && pool != null)
-            {
-                pool.Return(unit);
-            }
-            else
+            if (!useObjectPooling)
             {
                 Destroy(unit);
+                return;
             }
+
+            if (unit.TryGetComponent<NetworkObject>(out _) && networkUnitPools.TryGetValue(type, out var networkPool) && networkPool != null)
+            {
+                if (NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer)
+                {
+                    networkPool.Return(unit);
+                }
+                else
+                {
+                    GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Pooling, subsystem: type.ToString()),
+                        "Client attempted to return a network pooled unit. Only the server should manage pooled network units.");
+                }
+                return;
+            }
+
+            if (localUnitPools.TryGetValue(type, out var localPool) && localPool != null)
+            {
+                localPool.Return(unit);
+                return;
+            }
+
+            Destroy(unit);
         }
 
         /// <summary>
@@ -197,7 +277,13 @@ namespace MOBA
         {
             var stats = new Dictionary<UnitType, (int, int, int)>();
 
-            foreach (var kvp in unitPools)
+            foreach (var kvp in localUnitPools)
+            {
+                var poolStats = kvp.Value.GetStats();
+                stats[kvp.Key] = (poolStats.total, poolStats.available, poolStats.active);
+            }
+
+            foreach (var kvp in networkUnitPools)
             {
                 var poolStats = kvp.Value.GetStats();
                 stats[kvp.Key] = (poolStats.total, poolStats.available, poolStats.active);

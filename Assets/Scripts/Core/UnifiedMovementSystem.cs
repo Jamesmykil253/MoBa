@@ -14,6 +14,13 @@ namespace MOBA
         [Header("Movement Configuration")]
         [SerializeField] private float baseMoveSpeed = 8f;
         [SerializeField] private float jumpForce = 8f;
+        [SerializeField] private float holdJumpMultiplier = 1.5f;
+        [SerializeField] private float doubleJumpMultiplier = 2.0f;
+        [SerializeField] private float apexBoostMultiplier = 2.8f;
+        [SerializeField, Tooltip("Maximum absolute vertical velocity to qualify for the apex boost.")]
+        private float apexVelocityThreshold = 1.0f;
+        [SerializeField, Tooltip("Maximum time after the initial jump to qualify for the apex boost.")]
+        private float apexTimeWindow = 0.4f;
         [SerializeField] private float groundCheckDistance = 1.1f;
         [SerializeField] private LayerMask groundLayer = 1;
         [SerializeField] private bool enableNetworkValidation = true;
@@ -28,6 +35,13 @@ namespace MOBA
         private Vector3 lastValidPosition = Vector3.zero;
         private bool isGrounded = false;
         private float lastGroundedTime = 0f;
+        private bool canDoubleJump = true;
+        private bool hasDoubleJumped = false;
+        private bool pendingHoldBoost = false;
+        private bool holdBoostApplied = false;
+        private bool firstJumpUsedHold = false;
+        private float firstJumpTime = 0f;
+        private float validationSuspendUntil = 0f;
 
         // Component references
         private Transform transform;
@@ -39,6 +53,13 @@ namespace MOBA
         public System.Action<Vector3> OnMovementInputChanged;
         public System.Action<bool> OnGroundedStateChanged;
         public System.Action<Vector3> OnPositionValidated;
+
+        public enum JumpExecutionResult
+        {
+            None,
+            Initial,
+            Double
+        }
 
         #region Initialization
 
@@ -59,6 +80,12 @@ namespace MOBA
             }
             
             lastValidPosition = transform.position;
+            canDoubleJump = true;
+            hasDoubleJumped = false;
+            pendingHoldBoost = false;
+            holdBoostApplied = false;
+            firstJumpUsedHold = false;
+            firstJumpTime = 0f;
             
             Debug.Log($"[UnifiedMovementSystem] Initialized {(isNetworked ? "networked" : "local")} movement system");
         }
@@ -104,31 +131,123 @@ namespace MOBA
         }
 
         /// <summary>
-        /// Handle jump input with ground validation
+        /// Executes a jump or double jump depending on grounded state.
         /// </summary>
-        public bool TryJump()
+        public JumpExecutionResult TryExecuteJump()
         {
-            if (rigidbody == null || !isGrounded) return false;
-
-            // Check if enough time has passed since last grounded
-            if (Time.time - lastGroundedTime < 0.1f) return false;
-
-            // Network validation for jump
-            if (isNetworked && enableNetworkValidation)
+            if (rigidbody == null)
             {
-                if (!ValidateJumpInput())
-                {
-                    Debug.LogWarning("[UnifiedMovementSystem] Jump input failed network validation");
-                    return false;
-                }
+                return JumpExecutionResult.None;
             }
 
-            rigidbody.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
-            
-            // Publish jump event
-            UnifiedEventSystem.PublishLocal(new JumpPerformedEvent(transform.gameObject, jumpForce));
-            
+            if (isGrounded)
+            {
+                if (!CanPerformInitialJump())
+                {
+                    return JumpExecutionResult.None;
+                }
+
+                PerformJump(1f);
+                canDoubleJump = true;
+                hasDoubleJumped = false;
+                pendingHoldBoost = true;
+                holdBoostApplied = false;
+                firstJumpUsedHold = false;
+                firstJumpTime = Time.time;
+                return JumpExecutionResult.Initial;
+            }
+
+            if (canDoubleJump && !hasDoubleJumped)
+            {
+                Vector3 currentVelocity = PhysicsUtility.GetVelocity(rigidbody);
+                float preJumpVelocityY = currentVelocity.y;
+                float multiplier = doubleJumpMultiplier;
+                if (firstJumpUsedHold && Mathf.Abs(preJumpVelocityY) <= apexVelocityThreshold && Time.time - firstJumpTime <= apexTimeWindow)
+                {
+                    multiplier = apexBoostMultiplier;
+                }
+
+                PerformJump(multiplier);
+                hasDoubleJumped = true;
+                canDoubleJump = false;
+                pendingHoldBoost = false;
+                return JumpExecutionResult.Double;
+            }
+
+            return JumpExecutionResult.None;
+        }
+
+        public bool TryApplyHoldBoost()
+        {
+            if (rigidbody == null || !pendingHoldBoost || holdBoostApplied)
+            {
+                return false;
+            }
+
+            if (PhysicsUtility.GetVelocity(rigidbody).y <= 0f)
+            {
+                pendingHoldBoost = false;
+                return false;
+            }
+
+            float extraMultiplier = Mathf.Max(0f, holdJumpMultiplier - 1f);
+            if (extraMultiplier <= 0f)
+            {
+                pendingHoldBoost = false;
+                return false;
+            }
+
+            rigidbody.AddForce(Vector3.up * jumpForce * extraMultiplier, ForceMode.Impulse);
+            holdBoostApplied = true;
+            firstJumpUsedHold = true;
+            pendingHoldBoost = false;
             return true;
+        }
+
+        public void CancelHoldBoostCandidate()
+        {
+            if (!holdBoostApplied)
+            {
+                pendingHoldBoost = false;
+            }
+        }
+
+        public bool IsHoldBoostPending => pendingHoldBoost;
+
+        public bool TryJump()
+        {
+            return TryExecuteJump() != JumpExecutionResult.None;
+        }
+
+        private bool CanPerformInitialJump()
+        {
+            if (!isGrounded)
+            {
+                return false;
+            }
+
+            if (Time.time - lastGroundedTime < 0.05f)
+            {
+                return false;
+            }
+
+            if (isNetworked && enableNetworkValidation && !ValidateJumpInput())
+            {
+                Debug.LogWarning("[UnifiedMovementSystem] Jump input failed network validation");
+                return false;
+            }
+
+            return true;
+        }
+
+        private void PerformJump(float multiplier)
+        {
+            Vector3 velocity = PhysicsUtility.GetVelocity(rigidbody);
+            velocity.y = 0f;
+            PhysicsUtility.SetVelocity(rigidbody, velocity);
+            rigidbody.AddForce(Vector3.up * jumpForce * multiplier, ForceMode.Impulse);
+
+            UnifiedEventSystem.PublishLocal(new JumpPerformedEvent(transform.gameObject, jumpForce * multiplier));
         }
 
         #endregion
@@ -214,6 +333,12 @@ namespace MOBA
             if (isGrounded && !wasGrounded)
             {
                 lastGroundedTime = Time.time;
+                canDoubleJump = true;
+                hasDoubleJumped = false;
+                pendingHoldBoost = false;
+                holdBoostApplied = false;
+                firstJumpUsedHold = false;
+                firstJumpTime = 0f;
                 OnGroundedStateChanged?.Invoke(true);
                 
                 // Publish landing event
@@ -283,7 +408,13 @@ namespace MOBA
         private void ValidatePosition()
         {
             if (transform == null) return;
-            
+
+            if (Time.time < validationSuspendUntil)
+            {
+                lastValidPosition = transform.position;
+                return;
+            }
+
             Vector3 currentPos = transform.position;
             
             // Check if position is valid
@@ -297,7 +428,10 @@ namespace MOBA
                 // Reset to last valid position
                 Debug.LogWarning("[UnifiedMovementSystem] Invalid position detected, resetting to last valid position");
                 transform.position = lastValidPosition;
-                rigidbody.linearVelocity = Vector3.zero;
+                if (rigidbody != null)
+                {
+                    PhysicsUtility.SetVelocity(rigidbody, Vector3.zero);
+                }
             }
         }
 
@@ -310,6 +444,36 @@ namespace MOBA
         public float MovementSpeed => baseMoveSpeed;
         public Vector3 LastValidPosition => lastValidPosition;
         public bool IsNetworked => isNetworked;
+
+        /// <summary>
+        /// Set the base move speed used when translating movement input into world units per second.
+        /// </summary>
+        public void SetBaseMoveSpeed(float speed)
+        {
+            baseMoveSpeed = Mathf.Max(0f, speed);
+        }
+
+        /// <summary>
+        /// Teleports the character to a position and resets validation timers.
+        /// </summary>
+        public void WarpTo(Vector3 position, bool resetVelocity = true)
+        {
+            if (transform == null || rigidbody == null)
+            {
+                return;
+            }
+
+            rigidbody.position = position;
+            transform.position = position;
+
+            if (resetVelocity)
+            {
+                PhysicsUtility.SetVelocity(rigidbody, Vector3.zero);
+            }
+
+            lastValidPosition = position;
+            validationSuspendUntil = Time.time + 0.1f;
+        }
 
         #endregion
 

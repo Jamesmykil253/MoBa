@@ -57,7 +57,7 @@
                     "id": "852140f2-7766-474d-8707-702459ba45f3",
                     "expectedControlType": "",
                     "processors": "",
-                    "interactions": "Hold",
+                    "interactions": "Hold,Tap",
                     "initialStateCheck": false
                 },
                 {
@@ -66,7 +66,7 @@
                     "id": "f1ba0d36-48eb-4cd5-b651-1c94a6531f70",
                     "expectedControlType": "",
                     "processors": "",
-                    "interactions": "",
+                    "interactions": "Tap,Hold",
                     "initialStateCheck": false
                 },
                 {
@@ -111,7 +111,7 @@
                     "id": "e0568848-1ada-4439-8334-6b0b47e136a7",
                     "expectedControlType": "",
                     "processors": "",
-                    "interactions": "",
+                    "interactions": "Tap,Hold",
                     "initialStateCheck": false
                 },
                 {
@@ -120,7 +120,7 @@
                     "id": "c247d387-f9c0-4057-9469-6d882dc4863f",
                     "expectedControlType": "",
                     "processors": "",
-                    "interactions": "",
+                    "interactions": "Tap,Hold",
                     "initialStateCheck": false
                 },
                 {
@@ -129,7 +129,7 @@
                     "id": "8739c9a9-13ae-4a12-a2aa-219d498039b0",
                     "expectedControlType": "",
                     "processors": "",
-                    "interactions": "",
+                    "interactions": "Tap,Hold",
                     "initialStateCheck": false
                 },
                 {
@@ -139,6 +139,15 @@
                     "expectedControlType": "",
                     "processors": "",
                     "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "Ability4",
+                    "type": "Button",
+                    "id": "d2e68bf7-0764-4339-90f7-916702f1924b",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "Tap,Hold",
                     "initialStateCheck": false
                 }
             ],
@@ -554,7 +563,7 @@
                     "name": "",
                     "id": "c0820728-5905-4c70-9b54-bdbd6d29b38b",
                     "path": "<Keyboard>/q",
-                    "interactions": "Press,Hold",
+                    "interactions": "",
                     "processors": "",
                     "groups": "",
                     "action": "Ability1",
@@ -624,6 +633,50 @@
                     "processors": "",
                     "groups": ";Keyboard&Mouse",
                     "action": "Chat",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "c2a69ada-757f-43e4-b875-aaace1b1da63",
+                    "path": "<Keyboard>/q",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Keyboard&Mouse",
+                    "action": "e0568848-1ada-4439-8334-6b0b47e136a7",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "ea427712-ba72-47b4-b5f1-3edeb11ce8e9",
+                    "path": "<Keyboard>/w",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Keyboard&Mouse",
+                    "action": "c247d387-f9c0-4057-9469-6d882dc4863f",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "2cb03655-a904-4c66-be1e-d50b9376f4e8",
+                    "path": "<Keyboard>/e",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Keyboard&Mouse",
+                    "action": "8739c9a9-13ae-4a12-a2aa-219d498039b0",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "9abf62e0-2207-49e1-b409-eb3f1afd7d8f",
+                    "path": "<Keyboard>/r",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Keyboard&Mouse",
+                    "action": "d2e68bf7-0764-4339-90f7-916702f1924b",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }

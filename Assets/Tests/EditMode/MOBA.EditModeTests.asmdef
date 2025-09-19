@@ -1,0 +1,18 @@
+{
+    "name": "MOBA.EditModeTests",
+    "rootNamespace": "MOBA.Tests.EditMode",
+    "references": [
+        "MOBA.Runtime"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

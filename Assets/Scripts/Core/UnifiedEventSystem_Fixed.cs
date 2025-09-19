@@ -9,38 +9,60 @@ using Unity.Netcode;
 namespace MOBA
 {
 	/// <summary>
-	/// Weak reference wrapper for event handlers to prevent memory leaks
+	/// Weak reference contract for event handlers to prevent memory leaks.
 	/// </summary>
-	public class WeakEventHandler
+	public interface IWeakEventHandler
+	{
+		bool IsAlive { get; }
+		Delegate OriginalDelegate { get; }
+		bool TryInvoke(object arg);
+	}
+
+	/// <summary>
+	/// Weak reference wrapper for strongly typed event handlers without using reflection per dispatch.
+	/// </summary>
+	/// <typeparam name="T">Event payload type.</typeparam>
+	public sealed class WeakEventHandler<T> : IWeakEventHandler
 	{
 		private readonly WeakReference targetRef;
-		private readonly string methodName;
-		private readonly Type eventType;
-		private readonly Delegate originalDelegate;
 		private readonly bool isStatic;
-		public WeakEventHandler(Delegate handler, Type eventType)
+		private readonly Action<T> typedHandler;
+
+		public WeakEventHandler(Action<T> handler)
 		{
+			if (handler == null) throw new ArgumentNullException(nameof(handler));
+
+			typedHandler = handler;
 			isStatic = handler.Target == null;
 			if (!isStatic)
 			{
 				targetRef = new WeakReference(handler.Target);
 			}
-			this.methodName = handler.Method.Name;
-			this.eventType = eventType;
-			this.originalDelegate = handler;
 		}
+
 		public bool IsAlive => isStatic || (targetRef != null && targetRef.IsAlive);
-		public Delegate OriginalDelegate => originalDelegate;
+
+		public Delegate OriginalDelegate => typedHandler;
+
 		public bool TryInvoke(object arg)
 		{
-			if (!IsAlive) return false;
-			if (!isStatic)
+			if (!IsAlive)
 			{
-				var target = targetRef.Target;
-				if (target == null) return false;
+				return false;
 			}
-			originalDelegate.DynamicInvoke(arg);
-			return true;
+
+			if (!isStatic && targetRef.Target == null)
+			{
+				return false;
+			}
+
+			if (arg is T payload)
+			{
+				typedHandler(payload);
+				return true;
+			}
+
+			return false;
 		}
 	}
 
@@ -50,8 +72,8 @@ namespace MOBA
 	public static class UnifiedEventSystem
 	{
 		private static readonly object lockObject = new object();
-		private static readonly ConcurrentDictionary<Type, ConcurrentBag<WeakEventHandler>> localSubscribers = new ConcurrentDictionary<Type, ConcurrentBag<WeakEventHandler>>();
-		private static readonly ConcurrentDictionary<Type, ConcurrentBag<WeakEventHandler>> networkSubscribers = new ConcurrentDictionary<Type, ConcurrentBag<WeakEventHandler>>();
+		private static readonly ConcurrentDictionary<Type, ConcurrentBag<IWeakEventHandler>> localSubscribers = new ConcurrentDictionary<Type, ConcurrentBag<IWeakEventHandler>>();
+		private static readonly ConcurrentDictionary<Type, ConcurrentBag<IWeakEventHandler>> networkSubscribers = new ConcurrentDictionary<Type, ConcurrentBag<IWeakEventHandler>>();
 		private static float lastCleanupTime = 0f;
 		private const float cleanupInterval = 30f;
 
@@ -63,9 +85,9 @@ namespace MOBA
 				var eventType = typeof(T);
 				if (!localSubscribers.ContainsKey(eventType))
 				{
-					localSubscribers[eventType] = new ConcurrentBag<WeakEventHandler>();
+					localSubscribers[eventType] = new ConcurrentBag<IWeakEventHandler>();
 				}
-				var weakHandler = new WeakEventHandler(handler, eventType);
+				var weakHandler = new WeakEventHandler<T>(handler);
 				localSubscribers[eventType].Add(weakHandler);
 				if (Time.time - lastCleanupTime > cleanupInterval)
 				{
@@ -83,7 +105,7 @@ namespace MOBA
 				if (localSubscribers.ContainsKey(eventType))
 				{
 					var oldBag = localSubscribers[eventType];
-					var newBag = new ConcurrentBag<WeakEventHandler>();
+					var newBag = new ConcurrentBag<IWeakEventHandler>();
 					foreach (var weakHandler in oldBag)
 					{
 						if (weakHandler.IsAlive && !ReferenceEquals(weakHandler.OriginalDelegate, handler))
@@ -102,7 +124,7 @@ namespace MOBA
 			var eventType = typeof(T);
 			if (localSubscribers.TryGetValue(eventType, out var subscribers))
 			{
-				var deadHandlers = new List<WeakEventHandler>();
+				var deadHandlers = new List<IWeakEventHandler>();
 				foreach (var handler in subscribers)
 				{
 					if (!handler.TryInvoke(eventData))
@@ -125,9 +147,9 @@ namespace MOBA
 				var eventType = typeof(T);
 				if (!networkSubscribers.ContainsKey(eventType))
 				{
-					networkSubscribers[eventType] = new ConcurrentBag<WeakEventHandler>();
+					networkSubscribers[eventType] = new ConcurrentBag<IWeakEventHandler>();
 				}
-				var weakHandler = new WeakEventHandler(handler, eventType);
+				var weakHandler = new WeakEventHandler<T>(handler);
 				networkSubscribers[eventType].Add(weakHandler);
 				if (Time.time - lastCleanupTime > cleanupInterval)
 				{
@@ -145,7 +167,7 @@ namespace MOBA
 				if (networkSubscribers.ContainsKey(eventType))
 				{
 					var oldBag = networkSubscribers[eventType];
-					var newBag = new ConcurrentBag<WeakEventHandler>();
+					var newBag = new ConcurrentBag<IWeakEventHandler>();
 					foreach (var weakHandler in oldBag)
 					{
 						if (weakHandler.IsAlive && !ReferenceEquals(weakHandler.OriginalDelegate, handler))
@@ -169,7 +191,7 @@ namespace MOBA
 			var eventType = typeof(T);
 			if (networkSubscribers.TryGetValue(eventType, out var subscribers))
 			{
-				var deadHandlers = new List<WeakEventHandler>();
+				var deadHandlers = new List<IWeakEventHandler>();
 				foreach (var handler in subscribers)
 				{
 					if (!handler.TryInvoke(eventData))
@@ -192,7 +214,7 @@ namespace MOBA
 			{
 				if (localSubscribers.TryGetValue(eventType, out var bag))
 				{
-					var aliveBag = new ConcurrentBag<WeakEventHandler>();
+					var aliveBag = new ConcurrentBag<IWeakEventHandler>();
 					foreach (var handler in bag)
 					{
 						if (handler.IsAlive)
@@ -208,7 +230,7 @@ namespace MOBA
 			{
 				if (networkSubscribers.TryGetValue(eventType, out var bag))
 				{
-					var aliveBag = new ConcurrentBag<WeakEventHandler>();
+					var aliveBag = new ConcurrentBag<IWeakEventHandler>();
 					foreach (var handler in bag)
 					{
 						if (handler.IsAlive)
@@ -222,13 +244,13 @@ namespace MOBA
 			Debug.Log("[UnifiedEventSystem] Cleaned up dead event handler references");
 		}
 
-		private static void CleanupLocalHandlers(Type eventType, List<WeakEventHandler> deadHandlers)
+		private static void CleanupLocalHandlers(Type eventType, List<IWeakEventHandler> deadHandlers)
 		{
 			lock (lockObject)
 			{
 				if (localSubscribers.TryGetValue(eventType, out var oldBag))
 				{
-					var newBag = new ConcurrentBag<WeakEventHandler>();
+					var newBag = new ConcurrentBag<IWeakEventHandler>();
 					foreach (var handler in oldBag)
 					{
 						if (!deadHandlers.Contains(handler) && handler.IsAlive)
@@ -241,13 +263,13 @@ namespace MOBA
 			}
 		}
 
-		private static void CleanupNetworkHandlers(Type eventType, List<WeakEventHandler> deadHandlers)
+		private static void CleanupNetworkHandlers(Type eventType, List<IWeakEventHandler> deadHandlers)
 		{
 			lock (lockObject)
 			{
 				if (networkSubscribers.TryGetValue(eventType, out var oldBag))
 				{
-					var newBag = new ConcurrentBag<WeakEventHandler>();
+					var newBag = new ConcurrentBag<IWeakEventHandler>();
 					foreach (var handler in oldBag)
 					{
 						if (!deadHandlers.Contains(handler) && handler.IsAlive)
@@ -474,6 +496,3 @@ namespace MOBA
 		public float range;
 	}
 }
-
-
-

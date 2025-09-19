@@ -1,5 +1,5 @@
 using UnityEngine;
-using MOBA.Networking;
+using Unity.Netcode;
 using MOBA.Debugging;
 using MOBA.Effects;
 
@@ -12,8 +12,9 @@ namespace MOBA
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
     [RequireComponent(typeof(Collider))]
-    public class EnemyController : MonoBehaviour, IDamageable
+    public class EnemyController : MonoBehaviour, IDamageable, IDamageSnapshotReceiver
     {
+        private const float DirectionEpsilon = 0.0001f;
         [Header("Enemy Stats")]
         [SerializeField] private float maxHealth = 500f;
         [SerializeField] private float currentHealth;
@@ -26,6 +27,10 @@ namespace MOBA
         [SerializeField] private float detectionRange = 8f;
         [SerializeField] private float chaseRange = 12f;
         [SerializeField] private LayerMask targetLayerMask = -1;
+        [SerializeField, Tooltip("Maximum horizontal chase speed in units per second.")]
+        private float maxChaseSpeed = 10f;
+        [SerializeField, Tooltip("Multiplier applied to chase speed when returning to the origin.")]
+        private float returnSpeedMultiplier = 0.7f;
 
         [Header("Visual Settings")]
         [SerializeField] private Color enemyColor = Color.red;
@@ -55,6 +60,7 @@ namespace MOBA
         private bool isInitialized;
         private bool isReturning;
         private Transform lastLoggedTarget;
+        [SerializeField] private UnifiedMovementSystem movementSystem = new UnifiedMovementSystem();
 
         private GameDebugContext BuildContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.General)
         {
@@ -89,6 +95,11 @@ namespace MOBA
             col = GetComponent<Collider>();
             meshRenderer = GetComponent<Renderer>();
 
+            var networkObject = GetComponent<NetworkObject>();
+            movementSystem.Initialize(transform, rb, networkObject);
+            movementSystem.SetBaseMoveSpeed(GetChaseSpeed());
+            movementSystem.SetMovementInput(Vector3.zero);
+
             // Initialize
             InitializeEnemy();
             Log(GameDebugMechanicTag.Initialization, "Manual initialization completed.");
@@ -100,6 +111,8 @@ namespace MOBA
             originalPosition = transform.position;
             isDead = false;
             isInitialized = true;
+            movementSystem.SetBaseMoveSpeed(GetChaseSpeed());
+            movementSystem.SetMovementInput(Vector3.zero);
 
             // Set enemy color
             if (meshRenderer != null && meshRenderer.material != null)
@@ -128,6 +141,7 @@ namespace MOBA
                 if (distanceToTarget <= attackRange)
                 {
                     // Attack if in range
+                    movementSystem.SetMovementInput(Vector3.zero);
                     TryAttack();
                 }
                 else if (distanceToTarget <= chaseRange)
@@ -146,6 +160,16 @@ namespace MOBA
                 // No target, return to origin
                 ReturnToOrigin();
             }
+        }
+
+        private void FixedUpdate()
+        {
+            if (!isInitialized || isDead)
+            {
+                return;
+            }
+
+            movementSystem.UpdateMovement();
         }
 
         private void FindTarget()
@@ -206,15 +230,16 @@ namespace MOBA
 
             Vector3 direction = (target.position - transform.position);
             direction.y = 0f;
+            float sqrMagnitude = direction.sqrMagnitude;
+            if (sqrMagnitude < DirectionEpsilon)
+            {
+                movementSystem.SetMovementInput(Vector3.zero);
+                return;
+            }
+
             direction.Normalize();
-
-            float clampedSpeed = Mathf.Clamp(moveSpeed, 0f, 10f);
-            float currentSpeed = clampedSpeed * 1.1f;
-
-            Vector3 desiredVelocity = direction * currentSpeed;
-            desiredVelocity.y = rb.linearVelocity.y;
-
-            rb.linearVelocity = Vector3.Lerp(rb.linearVelocity, desiredVelocity, Time.deltaTime * 5f);
+            movementSystem.SetBaseMoveSpeed(GetChaseSpeed());
+            movementSystem.SetMovementInput(new Vector3(direction.x, 0f, direction.z));
 
             transform.LookAt(new Vector3(target.position.x, transform.position.y, target.position.z));
         }
@@ -235,13 +260,16 @@ namespace MOBA
                 isChasing = false;
                 Vector3 direction = (originalPosition - transform.position);
                 direction.y = 0f;
+                float sqrMagnitude = direction.sqrMagnitude;
+                if (sqrMagnitude < DirectionEpsilon)
+                {
+                    movementSystem.SetMovementInput(Vector3.zero);
+                    return;
+                }
+
                 direction.Normalize();
-
-                float clampedSpeed = Mathf.Clamp(moveSpeed, 0f, 10f) * 0.7f;
-                Vector3 desiredVelocity = direction * clampedSpeed;
-                desiredVelocity.y = rb.linearVelocity.y;
-
-                rb.linearVelocity = Vector3.Lerp(rb.linearVelocity, desiredVelocity, Time.deltaTime * 4f);
+                movementSystem.SetBaseMoveSpeed(GetReturnSpeed());
+                movementSystem.SetMovementInput(new Vector3(direction.x, 0f, direction.z));
 
                 if (!isReturning)
                 {
@@ -253,7 +281,8 @@ namespace MOBA
             else
             {
                 isChasing = false;
-                rb.linearVelocity = Vector3.zero;
+                movementSystem.SetMovementInput(Vector3.zero);
+                movementSystem.SetBaseMoveSpeed(GetChaseSpeed());
                 if (isReturning)
                 {
                     Log(GameDebugMechanicTag.StateChange,
@@ -363,7 +392,11 @@ namespace MOBA
             Log(GameDebugMechanicTag.StateChange, "Enemy died and will trigger death effects.");
 
             // Stop movement
-            rb.linearVelocity = Vector3.zero;
+            if (rb != null)
+            {
+                PhysicsUtility.SetVelocity(rb, Vector3.zero);
+            }
+            movementSystem.SetMovementInput(Vector3.zero);
 
             // Create death effect
             CreateDeathEffect();
@@ -417,16 +450,42 @@ namespace MOBA
             {
                 ManualInitialize();
             }
+            CancelInvoke(nameof(DisableEnemy));
             // Reset enemy state
             isDead = false;
             currentHealth = maxHealth;
-            transform.position = originalPosition;
+            movementSystem.WarpTo(originalPosition);
+            movementSystem.SetBaseMoveSpeed(GetChaseSpeed());
+            movementSystem.SetMovementInput(Vector3.zero);
             target = null;
             isChasing = false;
             
             gameObject.SetActive(true);
             
             Log(GameDebugMechanicTag.Spawning, "Enemy respawned with reset state.");
+        }
+
+        public void ApplyServerHealthSnapshot(float health, bool dead)
+        {
+            currentHealth = Mathf.Clamp(health, 0f, maxHealth);
+
+            if (dead)
+            {
+                if (!isDead)
+                {
+                    isDead = true;
+                    movementSystem.SetMovementInput(Vector3.zero);
+                    if (rb != null)
+                    {
+                        PhysicsUtility.SetVelocity(rb, Vector3.zero);
+                    }
+                }
+            }
+            else if (isDead)
+            {
+                isDead = false;
+                movementSystem.SetMovementInput(Vector3.zero);
+            }
         }
 
         private void OnDrawGizmosSelected()
@@ -466,6 +525,16 @@ namespace MOBA
             }
 
             GameDebug.Log(BuildContext(mechanic), message, details);
+        }
+
+        private float GetChaseSpeed()
+        {
+            return Mathf.Clamp(moveSpeed, 0f, maxChaseSpeed);
+        }
+
+        private float GetReturnSpeed()
+        {
+            return Mathf.Clamp(GetChaseSpeed() * returnSpeedMultiplier, 0f, maxChaseSpeed);
         }
     }
 }
