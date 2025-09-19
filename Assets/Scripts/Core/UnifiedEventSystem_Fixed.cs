@@ -68,6 +68,193 @@ namespace MOBA
 
 	/// <summary>
 	/// Unified event system for local and network events
+	/// Implements the Observer pattern with weak references to prevent memory leaks
+	/// Supports both local events (single client) and network events (server-authoritative)
+	/// 
+	/// <example>
+	/// <para><strong>Local Event Usage (Observer Pattern):</strong></para>
+	/// <code>
+	/// // Define a local event
+	/// public class PlayerLevelUpEvent : ILocalEvent
+	/// {
+	///     public int PlayerLevel { get; }
+	///     public int NewXP { get; }
+	///     
+	///     public PlayerLevelUpEvent(int level, int xp)
+	///     {
+	///         PlayerLevel = level;
+	///         NewXP = xp;
+	///     }
+	/// }
+	/// 
+	/// // Subscribe to the event
+	/// public class UIManager : MonoBehaviour
+	/// {
+	///     void Start()
+	///     {
+	///         UnifiedEventSystem.SubscribeLocal&lt;PlayerLevelUpEvent&gt;(OnPlayerLevelUp);
+	///     }
+	///     
+	///     void OnDestroy()
+	///     {
+	///         UnifiedEventSystem.UnsubscribeLocal&lt;PlayerLevelUpEvent&gt;(OnPlayerLevelUp);
+	///     }
+	///     
+	///     private void OnPlayerLevelUp(PlayerLevelUpEvent evt)
+	///     {
+	///         Debug.Log($"Player reached level {evt.PlayerLevel} with {evt.NewXP} XP!");
+	///         UpdateLevelDisplay(evt.PlayerLevel);
+	///     }
+	/// }
+	/// 
+	/// // Publish the event
+	/// public class PlayerController : MonoBehaviour
+	/// {
+	///     void GainExperience(int xp)
+	///     {
+	///         currentXP += xp;
+	///         if (currentXP >= xpToNextLevel)
+	///         {
+	///             currentLevel++;
+	///             var levelUpEvent = new PlayerLevelUpEvent(currentLevel, currentXP);
+	///             UnifiedEventSystem.PublishLocal(levelUpEvent);
+	///         }
+	///     }
+	/// }
+	/// </code>
+	/// 
+	/// <para><strong>Network Event Usage (Server-Authoritative):</strong></para>
+	/// <code>
+	/// // Network events can only be published by server/host
+	/// public class GameManager : NetworkBehaviour
+	/// {
+	///     void Start()
+	///     {
+	///         // All clients can subscribe to network events
+	///         UnifiedEventSystem.SubscribeNetwork&lt;PlayerConnectedEvent&gt;(OnPlayerJoined);
+	///         UnifiedEventSystem.SubscribeNetwork&lt;PlayerDisconnectedEvent&gt;(OnPlayerLeft);
+	///     }
+	///     
+	///     void OnDestroy()
+	///     {
+	///         UnifiedEventSystem.UnsubscribeNetwork&lt;PlayerConnectedEvent&gt;(OnPlayerJoined);
+	///         UnifiedEventSystem.UnsubscribeNetwork&lt;PlayerDisconnectedEvent&gt;(OnPlayerLeft);
+	///     }
+	///     
+	///     // Server publishes network events
+	///     [ServerRpc]
+	///     void HandlePlayerConnectionServerRpc(ulong clientId)
+	///     {
+	///         if (IsServer)
+	///         {
+	///             var connectEvent = new PlayerConnectedEvent(clientId, Time.time);
+	///             UnifiedEventSystem.PublishNetwork(connectEvent); // Sent to all clients
+	///         }
+	///     }
+	///     
+	///     private void OnPlayerJoined(PlayerConnectedEvent evt)
+	///     {
+	///         Debug.Log($"Player {evt.ClientId} joined at {evt.Timestamp}");
+	///         ShowWelcomeMessage(evt.ClientId);
+	///     }
+	///     
+	///     private void OnPlayerLeft(PlayerDisconnectedEvent evt)
+	///     {
+	///         Debug.Log($"Player {evt.ClientId} left at {evt.Timestamp}");
+	///         CleanupPlayerData(evt.ClientId);
+	///     }
+	/// }
+	/// </code>
+	/// 
+	/// <para><strong>Combat Event Chain Example:</strong></para>
+	/// <code>
+	/// // Combat system publishes damage events
+	/// public class CombatSystem : MonoBehaviour
+	/// {
+	///     public void DealDamage(GameObject attacker, GameObject defender, float damage)
+	///     {
+	///         // Apply damage
+	///         var health = defender.GetComponent&lt;HealthComponent&gt;();
+	///         health.TakeDamage(damage);
+	///         
+	///         // Publish damage event for UI/effects
+	///         var damageEvent = new DamageDealtEvent(attacker, defender, damage);
+	///         UnifiedEventSystem.PublishLocal(damageEvent);
+	///         
+	///         // Check for death
+	///         if (health.IsDead())
+	///         {
+	///             var deathEvent = new CharacterDefeatedEvent(defender, attacker, 0f, "Combat");
+	///             UnifiedEventSystem.PublishLocal(deathEvent);
+	///         }
+	///     }
+	/// }
+	/// 
+	/// // Multiple systems can react to the same event
+	/// public class EffectsManager : MonoBehaviour
+	/// {
+	///     void Start()
+	///     {
+	///         UnifiedEventSystem.SubscribeLocal&lt;DamageDealtEvent&gt;(OnDamageDealt);
+	///         UnifiedEventSystem.SubscribeLocal&lt;CharacterDefeatedEvent&gt;(OnCharacterDefeated);
+	///     }
+	///     
+	///     void OnDamageDealt(DamageDealtEvent evt)
+	///     {
+	///         SpawnDamageNumber(evt.Defender.transform.position, evt.DamageResult);
+	///         PlayHitEffect(evt.AttackPosition);
+	///     }
+	///     
+	///     void OnCharacterDefeated(CharacterDefeatedEvent evt)
+	///     {
+	///         SpawnDeathEffect(evt.DefeatedCharacter.transform.position);
+	///         PlayDeathSound();
+	///     }
+	/// }
+	/// </code>
+	/// 
+	/// <para><strong>Memory Management and Cleanup:</strong></para>
+	/// <code>
+	/// // Automatic cleanup with weak references (no explicit unsubscribe needed)
+	/// public class TemporaryEffect : MonoBehaviour
+	/// {
+	///     void Start()
+	///     {
+	///         // Subscribe without worrying about cleanup - weak references prevent leaks
+	///         UnifiedEventSystem.SubscribeLocal&lt;ExplosionEvent&gt;(OnExplosion);
+	///     }
+	///     
+	///     // When this object is destroyed, weak references automatically clean up
+	///     
+	///     void OnExplosion(ExplosionEvent evt)
+	///     {
+	///         if (Vector3.Distance(transform.position, evt.Position) &lt; evt.Radius)
+	///         {
+	///             ApplyKnockback(evt.Force);
+	///         }
+	///     }
+	/// }
+	/// 
+	/// // Manual cleanup for performance-critical scenarios
+	/// public class PerformanceManager : MonoBehaviour
+	/// {
+	///     void Update()
+	///     {
+	///         // Force cleanup of dead references periodically
+	///         if (Time.time % 60f &lt; Time.deltaTime) // Every 60 seconds
+	///         {
+	///             UnifiedEventSystem.ForceCleanup();
+	///         }
+	///     }
+	/// }
+	/// </code>
+	/// </example>
+	/// 
+	/// <para><strong>Design Pattern:</strong> Observer with Weak References</para>
+	/// <para><strong>Thread Safety:</strong> All operations are thread-safe with proper locking</para>
+	/// <para><strong>Memory Safety:</strong> Weak references prevent memory leaks from forgotten unsubscribes</para>
+	/// <para><strong>Network Aware:</strong> Server authority enforced for network events</para>
+	/// <para><strong>Performance:</strong> Automatic cleanup of dead references every 30 seconds</para>
 	/// </summary>
 	public static class UnifiedEventSystem
 	{

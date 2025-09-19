@@ -1,973 +1,729 @@
 using System;
-using System.Collections;
-using System.Collections.Generic;
-using Unity.Netcode;
 using UnityEngine;
-using UnityEngine.InputSystem;
+using Unity.Netcode;
 using MOBA.Debugging;
-using MOBA.Effects;
 using MOBA.Networking;
 
 namespace MOBA.Abilities
 {
     /// <summary>
-    /// Enhanced ability system with resource management, effects, and proper state tracking
-    /// Replaces SimpleAbilitySystem with production-ready implementation
+    /// Enhanced ability system with component-based architecture for maintainability and single responsibility.
+    /// Now delegates specialized responsibilities to focused manager components.
     /// </summary>
     public class EnhancedAbilitySystem : MonoBehaviour
     {
-        // Static buffer for non-alloc overlap sphere
-        private static Collider[] overlapBuffer = new Collider[32];
+        #region Configuration
+        
         [Header("Abilities")]
         [SerializeField] private EnhancedAbility[] abilities = new EnhancedAbility[4];
         
-        [Header("Resource System")]
-        [SerializeField] private float maxMana = 100f;
-        [SerializeField] private float currentMana = 100f;
-        [SerializeField] private float manaRegenPerSecond = 5f;
-        [SerializeField] private float outOfCombatManaMultiplier = 2f;
+        [Header("Component Configuration")]
+        [SerializeField, Tooltip("Enable detailed system logging")]
+        private bool logSystemEvents = true;
         
-        [Header("Global Settings")]
-        [SerializeField] private float globalCooldown = 0.1f;
-        [SerializeField] private bool enableCooldownReduction = true;
-        [SerializeField] private float maxCooldownReduction = 0.4f; // 40% max CDR
-
-        [Header("Combat State")]
-        [SerializeField] private float combatDuration = 5f; // Time to stay in combat after last action
-
-        [Header("Input System")]
-        [SerializeField] private InputActionAsset inputActions;
-        [SerializeField] private string[] abilityActionNames = new[] { "Ability1", "Ability2", "Ability3", "Ability4" };
-        [SerializeField, Tooltip("When enabled the system binds directly to the Input Action Asset. Disable if a legacy handler (e.g. SimpleInputHandler) should own input wiring.")]
-        private bool enableInternalInputActions = true;
-
-        // Runtime state
-        private float lastCastTime;
-        private float lastCombatTime;
-        private bool isInCombat = false;
-        private readonly Dictionary<int, float> cooldowns = new Dictionary<int, float>();
-        private readonly Dictionary<int, bool> abilityLocked = new Dictionary<int, bool>(); // For channeling/casting
-        private readonly List<int> cooldownKeyCache = new List<int>(8);
+        #endregion
+        
+        #region Manager Components
+        
+        /// <summary>
+        /// Handles mana and resource management
+        /// </summary>
+        public AbilityResourceManager ResourceManager { get; private set; }
+        
+        /// <summary>
+        /// Handles cooldown tracking and reduction
+        /// </summary>
+        public AbilityCooldownManager CooldownManager { get; private set; }
+        
+        /// <summary>
+        /// Handles combat state tracking
+        /// </summary>
+        public AbilityCombatManager CombatManager { get; private set; }
+        
+        /// <summary>
+        /// Handles ability execution and effects
+        /// </summary>
+        public AbilityExecutionManager ExecutionManager { get; private set; }
+        
+        /// <summary>
+        /// Handles input processing and key bindings
+        /// </summary>
+        public AbilityInputManager InputManager { get; private set; }
+        
+        #endregion
+        
+        #region Private Fields
+        
+        /// <summary>
+        /// Network bridge for ability synchronization
+        /// </summary>
         private AbilityNetworkController networkBridge;
-
-        // Hit result buffers are pooled to avoid per-cast allocations.
-        private readonly Stack<List<AbilityHitResult>> serverHitBufferPool = new Stack<List<AbilityHitResult>>();
-
-        // Stats modifiers
-        private float currentCooldownReduction = 0f;
-
-        // Input state
-        private InputAction[] abilityInputActions;
-        private System.Action<InputAction.CallbackContext>[] abilityActionHandlers;
-        private bool inputActionsInitialized;
-        private bool inputEnabled = true;
         
-    // Events
-    /// <summary>
-    /// Raised when an ability is cast. Listeners MUST unsubscribe to prevent memory leaks.
-    /// </summary>
-    public System.Action<int> OnAbilityCast; // ability index
-    /// <summary>
-    /// Raised when mana changes. Listeners MUST unsubscribe to prevent memory leaks.
-    /// </summary>
-    public System.Action<float, float> OnManaChanged; // current, max
-    /// <summary>
-    /// Raised when an ability cooldown updates. Listeners MUST unsubscribe to prevent memory leaks.
-    /// </summary>
-    public System.Action<int, float> OnCooldownUpdate; // ability index, remaining time
-    /// <summary>
-    /// Raised when combat state changes. Listeners MUST unsubscribe to prevent memory leaks.
-    /// </summary>
-    public System.Action<bool> OnCombatStateChanged; // in combat
-
-        // Properties
-        public float CurrentMana => currentMana;
-        public float MaxMana => maxMana;
-        public float ManaPercentage => maxMana > 0 ? currentMana / maxMana : 0f;
-        public bool IsInCombat => isInCombat;
-        public float CooldownReduction => currentCooldownReduction;
-
-        private GameDebugContext BuildContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.General)
-        {
-            return new GameDebugContext(
-                GameDebugCategory.Ability,
-                GameDebugSystemTag.Ability,
-                mechanic,
-                subsystem: nameof(EnhancedAbilitySystem),
-                actor: gameObject != null ? gameObject.name : null);
-        }
+        /// <summary>
+        /// Whether the system is fully initialized
+        /// </summary>
+        private bool isInitialized = false;
         
-        internal void AttachNetworkBridge(AbilityNetworkController bridge)
-        {
-            networkBridge = bridge;
-        }
-
-        internal void DetachNetworkBridge(AbilityNetworkController bridge)
-        {
-            if (networkBridge == bridge)
-            {
-                networkBridge = null;
-            }
-        }
+        #endregion
+        
+        #region Events (Delegated from Components)
+        
+        /// <summary>
+        /// Raised when an ability is cast. Listeners MUST unsubscribe to prevent memory leaks.
+        /// </summary>
+        public System.Action<int> OnAbilityCast; // ability index
+        
+        /// <summary>
+        /// Raised when mana changes. Listeners MUST unsubscribe to prevent memory leaks.
+        /// </summary>
+        public System.Action<float, float> OnManaChanged; // current, max
+        
+        /// <summary>
+        /// Raised when an ability cooldown updates. Listeners MUST unsubscribe to prevent memory leaks.
+        /// </summary>
+        public System.Action<int, float> OnCooldownUpdate; // ability index, remaining time
+        
+        /// <summary>
+        /// Raised when combat state changes. Listeners MUST unsubscribe to prevent memory leaks.
+        /// </summary>
+        public System.Action<bool> OnCombatStateChanged; // in combat
+        
+        #endregion
+        
+        #region Properties (Delegated to Components)
+        
+        /// <summary>
+        /// Current mana amount
+        /// </summary>
+        public float CurrentMana => ResourceManager?.CurrentMana ?? 0f;
+        
+        /// <summary>
+        /// Maximum mana amount
+        /// </summary>
+        public float MaxMana => ResourceManager?.MaxMana ?? 0f;
+        
+        /// <summary>
+        /// Mana as percentage of maximum
+        /// </summary>
+        public float ManaPercentage => ResourceManager?.ManaPercentage ?? 0f;
+        
+        /// <summary>
+        /// Whether currently in combat
+        /// </summary>
+        public bool IsInCombat => CombatManager?.IsInCombat ?? false;
+        
+        /// <summary>
+        /// Current cooldown reduction percentage
+        /// </summary>
+        public float CooldownReduction => CooldownManager?.CooldownReduction ?? 0f;
+        
+        /// <summary>
+        /// Public access to abilities array
+        /// </summary>
+        public EnhancedAbility[] Abilities => abilities;
+        
+        #endregion
         
         #region Unity Lifecycle
         
         void Awake()
         {
-            DetectLegacyInputHandler();
-            InitializeInputActions();
-            if (networkBridge == null)
-            {
-                networkBridge = GetComponent<AbilityNetworkController>();
-            }
+            InitializeComponents();
         }
 
         void OnEnable()
         {
-            ApplyInputActionState(inputEnabled);
+            if (isInitialized)
+            {
+                EnableAllComponents();
+            }
         }
 
         void Start()
         {
-            // Initialize cooldowns and locks
-            for (int i = 0; i < abilities.Length; i++)
+            if (!isInitialized)
             {
-                cooldowns[i] = 0f;
-                abilityLocked[i] = false;
+                InitializeSystem();
             }
             
-            currentMana = maxMana;
-            OnManaChanged?.Invoke(currentMana, maxMana);
+            ConnectEvents();
+            
+            if (logSystemEvents)
+            {
+                GameDebug.Log(
+                    BuildContext(),
+                    "Enhanced ability system started.",
+                    ("AbilityCount", abilities.Length),
+                    ("ComponentsInitialized", isInitialized));
+            }
         }
         
         void Update()
         {
-            UpdateCooldowns();
-            UpdateManaRegeneration();
-            UpdateCombatState();
+            if (!isInitialized)
+            {
+                return;
+            }
+            
+            // Update all manager components
+            ResourceManager?.UpdateComponent();
+            CooldownManager?.UpdateComponent();
+            CombatManager?.UpdateComponent();
+            ExecutionManager?.UpdateComponent();
+            InputManager?.UpdateComponent();
         }
         
         void OnDisable()
         {
-            ApplyInputActionState(false);
+            DisableAllComponents();
         }
-
+        
         void OnDestroy()
         {
-            CleanupInputActions();
-            // Clean up events
-            OnAbilityCast = null;
-            OnManaChanged = null;
-            OnCooldownUpdate = null;
-            OnCombatStateChanged = null;
+            ShutdownSystem();
         }
         
         #endregion
         
-        #region Resource Management
+        #region Component Management
         
-        private void UpdateManaRegeneration()
+        /// <summary>
+        /// Initialize all ability manager components
+        /// </summary>
+        private void InitializeComponents()
         {
-            if (currentMana >= maxMana) return;
+            // Create components if they don't exist
+            ResourceManager = GetComponent<AbilityResourceManager>() ?? gameObject.AddComponent<AbilityResourceManager>();
+            CooldownManager = GetComponent<AbilityCooldownManager>() ?? gameObject.AddComponent<AbilityCooldownManager>();
+            CombatManager = GetComponent<AbilityCombatManager>() ?? gameObject.AddComponent<AbilityCombatManager>();
+            ExecutionManager = GetComponent<AbilityExecutionManager>() ?? gameObject.AddComponent<AbilityExecutionManager>();
+            InputManager = GetComponent<AbilityInputManager>() ?? gameObject.AddComponent<AbilityInputManager>();
             
-            float regenRate = manaRegenPerSecond;
-            if (!isInCombat)
+            // Find network bridge
+            networkBridge = GetComponent<AbilityNetworkController>();
+            
+            if (logSystemEvents)
             {
-                regenRate *= outOfCombatManaMultiplier;
-            }
-            
-            float previousMana = currentMana;
-            currentMana = Mathf.Min(maxMana, currentMana + regenRate * Time.deltaTime);
-            
-            if (currentMana != previousMana)
-            {
-                OnManaChanged?.Invoke(currentMana, maxMana);
-            }
-        }
-        
-        public bool HasMana(float cost)
-        {
-            return currentMana >= cost;
-        }
-        
-        public bool ConsumeMana(float cost)
-        {
-            if (!HasMana(cost)) return false;
-            
-            currentMana = Mathf.Max(0f, currentMana - cost);
-            OnManaChanged?.Invoke(currentMana, maxMana);
-            return true;
-        }
-        
-        public void RestoreMana(float amount)
-        {
-            float previousMana = currentMana;
-            currentMana = Mathf.Min(maxMana, currentMana + amount);
-            
-            if (currentMana != previousMana)
-            {
-                OnManaChanged?.Invoke(currentMana, maxMana);
+                GameDebug.Log(
+                    BuildContext(),
+                    "Components initialized.",
+                    ("NetworkBridge", networkBridge != null));
             }
         }
         
-        #endregion
-        
-        #region Cooldown Management
-        
-        private void UpdateCooldowns()
+        /// <summary>
+        /// Initialize the complete ability system
+        /// </summary>
+        private void InitializeSystem()
         {
-            if (cooldowns.Count == 0)
+            try
             {
-                return;
-            }
-
-            cooldownKeyCache.Clear();
-            cooldownKeyCache.AddRange(cooldowns.Keys);
-
-            float deltaTime = Time.deltaTime;
-
-            for (int i = 0; i < cooldownKeyCache.Count; i++)
-            {
-                int key = cooldownKeyCache[i];
-                if (!cooldowns.TryGetValue(key, out float remaining) || remaining <= 0f)
+                // Initialize each component with this ability system
+                ResourceManager?.Initialize(this);
+                CooldownManager?.Initialize(this);
+                CombatManager?.Initialize(this);
+                ExecutionManager?.Initialize(this);
+                InputManager?.Initialize(this);
+                
+                // Set cross-component references
+                ExecutionManager?.SetManagers(ResourceManager, CooldownManager, CombatManager);
+                InputManager?.SetManagers(ExecutionManager, CooldownManager);
+                
+                // Attach network bridge if available
+                if (networkBridge != null)
                 {
-                    continue;
+                    ExecutionManager?.AttachNetworkBridge(networkBridge);
                 }
-
-                float updated = Mathf.Max(0f, remaining - deltaTime);
-                if (!Mathf.Approximately(updated, remaining))
+                
+                isInitialized = true;
+                
+                if (logSystemEvents)
                 {
-                    cooldowns[key] = updated;
-                    OnCooldownUpdate?.Invoke(key, updated);
+                    GameDebug.Log(
+                        BuildContext(),
+                        "System initialization completed.");
                 }
             }
+            catch (System.Exception ex)
+            {
+                GameDebug.LogError(
+                    BuildContext(),
+                    "System initialization failed.",
+                    ("Error", ex.Message));
+                
+                isInitialized = false;
+            }
         }
         
-        private float GetModifiedCooldown(float baseCooldown)
+        /// <summary>
+        /// Connect component events to main system events
+        /// </summary>
+        private void ConnectEvents()
         {
-            if (!enableCooldownReduction) return baseCooldown;
+            // Resource manager events
+            if (ResourceManager != null)
+            {
+                ResourceManager.OnManaChanged += (current, max) => OnManaChanged?.Invoke(current, max);
+            }
             
-            float reduction = Mathf.Clamp(currentCooldownReduction, 0f, maxCooldownReduction);
-            return baseCooldown * (1f - reduction);
+            // Cooldown manager events
+            if (CooldownManager != null)
+            {
+                CooldownManager.OnCooldownUpdate += (index, remaining) => OnCooldownUpdate?.Invoke(index, remaining);
+            }
+            
+            // Combat manager events
+            if (CombatManager != null)
+            {
+                CombatManager.OnCombatStateChanged += (inCombat) => OnCombatStateChanged?.Invoke(inCombat);
+            }
+            
+            // Execution manager events
+            if (ExecutionManager != null)
+            {
+                ExecutionManager.OnAbilityCast += (index) => OnAbilityCast?.Invoke(index);
+            }
+            
+            if (logSystemEvents)
+            {
+                GameDebug.Log(
+                    BuildContext(),
+                    "Component events connected.");
+            }
         }
         
-        public void SetCooldownReduction(float reduction)
+        /// <summary>
+        /// Enable all manager components
+        /// </summary>
+        private void EnableAllComponents()
         {
-            currentCooldownReduction = Mathf.Clamp(reduction, 0f, maxCooldownReduction);
+            InputManager?.EnableInput();
+            
+            if (logSystemEvents)
+            {
+                GameDebug.Log(
+                    BuildContext(),
+                    "All components enabled.");
+            }
+        }
+        
+        /// <summary>
+        /// Disable all manager components
+        /// </summary>
+        private void DisableAllComponents()
+        {
+            InputManager?.DisableInput();
+            
+            if (logSystemEvents)
+            {
+                GameDebug.Log(
+                    BuildContext(),
+                    "All components disabled.");
+            }
+        }
+        
+        /// <summary>
+        /// Shutdown the complete ability system
+        /// </summary>
+        private void ShutdownSystem()
+        {
+            try
+            {
+                // Shutdown all components
+                ResourceManager?.Shutdown();
+                CooldownManager?.Shutdown();
+                CombatManager?.Shutdown();
+                ExecutionManager?.Shutdown();
+                InputManager?.Shutdown();
+                
+                // Clear events
+                OnAbilityCast = null;
+                OnManaChanged = null;
+                OnCooldownUpdate = null;
+                OnCombatStateChanged = null;
+                
+                // Clear references
+                networkBridge = null;
+                isInitialized = false;
+                
+                if (logSystemEvents)
+                {
+                    GameDebug.Log(
+                        BuildContext(),
+                        "System shutdown completed.");
+                }
+            }
+            catch (System.Exception ex)
+            {
+                GameDebug.LogError(
+                    BuildContext(),
+                    "System shutdown failed.",
+                    ("Error", ex.Message));
+            }
         }
         
         #endregion
         
-        #region Combat State
+        #region Public API (Delegates to Components)
         
-        private void UpdateCombatState()
-        {
-            bool wasInCombat = isInCombat;
-            isInCombat = Time.time - lastCombatTime < combatDuration;
-            
-            if (wasInCombat != isInCombat)
-            {
-                OnCombatStateChanged?.Invoke(isInCombat);
-            }
-        }
-        
-        private void EnterCombat()
-        {
-            lastCombatTime = Time.time;
-            if (!isInCombat)
-            {
-                isInCombat = true;
-                OnCombatStateChanged?.Invoke(true);
-            }
-        }
-        
-        #endregion
-        
-        #region Ability Casting
-        
+        /// <summary>
+        /// Attempt to cast an ability
+        /// </summary>
+        /// <param name="abilityIndex">Index of ability to cast</param>
+        /// <returns>True if casting was initiated successfully</returns>
         public bool TryCastAbility(int abilityIndex)
         {
-            Vector3 targetPosition = transform.position;
-            Vector3 targetDirection = transform.forward;
-
-            var precheck = ValidateAbilityCast(abilityIndex);
-            if (networkBridge != null && networkBridge.IsSpawned)
+            if (!isInitialized || ExecutionManager == null)
             {
-                if (precheck != AbilityFailureCode.None && !networkBridge.HasNetworkAuthority)
-                {
-                    HandleLocalAbilityFailure(abilityIndex, precheck);
-                    return false;
-                }
-
-                return networkBridge.RequestAbilityCast(abilityIndex, targetPosition, targetDirection);
-            }
-
-            if (precheck != AbilityFailureCode.None)
-            {
-                HandleLocalAbilityFailure(abilityIndex, precheck);
                 return false;
             }
-
-            var request = new AbilityCastRequest
-            {
-                RequestId = 0,
-                AbilityIndex = (ushort)Mathf.Max(0, abilityIndex),
-                TargetPosition = targetPosition,
-                TargetDirection = targetDirection
-            };
-
-            HandleAbilityCastRequest(request, NetworkManager.Singleton != null ? NetworkManager.Singleton.LocalClientId : 0);
-            return true;
-        }
-        
-        public bool CanCastAbility(int abilityIndex)
-        {
-            return ValidateAbilityCast(abilityIndex) == AbilityFailureCode.None;
-        }
-
-        private AbilityFailureCode ValidateAbilityCast(int abilityIndex)
-        {
-            if (abilityIndex < 0 || abilityIndex >= abilities.Length)
-            {
-                return AbilityFailureCode.InvalidAbility;
-            }
-
-            var ability = abilities[abilityIndex];
-            if (ability == null)
-            {
-                return AbilityFailureCode.InvalidAbility;
-            }
-
-            if (abilityLocked.TryGetValue(abilityIndex, out bool locked) && locked)
-            {
-                return AbilityFailureCode.AbilityLocked;
-            }
-
-            if (cooldowns.TryGetValue(abilityIndex, out float cooldownRemaining) && cooldownRemaining > 0f)
-            {
-                return AbilityFailureCode.OnCooldown;
-            }
-
-            if (Time.time - lastCastTime < globalCooldown)
-            {
-                return AbilityFailureCode.GlobalCooldown;
-            }
-
-            if (!HasMana(ability.manaCost))
-            {
-                return AbilityFailureCode.InsufficientMana;
-            }
-
-            return AbilityFailureCode.None;
-        }
-
-        private void HandleLocalAbilityFailure(int abilityIndex, AbilityFailureCode failureCode)
-        {
-            if (failureCode == AbilityFailureCode.None)
-            {
-                return;
-            }
-
-            if (abilityIndex < 0 || abilityIndex >= abilities.Length)
-            {
-                return;
-            }
-
-            var ability = abilities[abilityIndex];
-            if (ability == null)
-            {
-                return;
-            }
-
-            switch (failureCode)
-            {
-                case AbilityFailureCode.InsufficientMana:
-                    GameDebug.LogWarning(
-                        BuildContext(GameDebugMechanicTag.Resource),
-                        "Insufficient mana to cast ability.",
-                        ("Ability", ability.abilityName),
-                        ("Required", ability.manaCost),
-                        ("Current", currentMana));
-                    break;
-                case AbilityFailureCode.OnCooldown:
-                    GameDebug.LogWarning(
-                        BuildContext(GameDebugMechanicTag.Cooldown),
-                        "Ability on cooldown.",
-                        ("Ability", ability.abilityName));
-                    break;
-                case AbilityFailureCode.GlobalCooldown:
-                    GameDebug.LogWarning(
-                        BuildContext(GameDebugMechanicTag.Cooldown),
-                        "Global cooldown active.",
-                        ("Ability", ability.abilityName));
-                    break;
-                case AbilityFailureCode.AbilityLocked:
-                    GameDebug.LogWarning(
-                        BuildContext(GameDebugMechanicTag.Cooldown),
-                        "Ability is currently channeling.",
-                        ("Ability", ability.abilityName));
-                    break;
-                default:
-                    GameDebug.LogWarning(
-                        BuildContext(GameDebugMechanicTag.Validation),
-                        "Ability cast rejected.",
-                        ("Ability", ability.abilityName),
-                        ("Reason", failureCode));
-                    break;
-            }
-        }
-
-        internal void HandleAbilityCastRequest(AbilityCastRequest request, ulong senderClientId)
-        {
-            int abilityIndex = request.AbilityIndex;
-            var failure = ValidateAbilityCast(abilityIndex);
-
-            if (failure != AbilityFailureCode.None)
-            {
-                var failureResult = AbilityCastResult.CreateFailure(request.RequestId, abilityIndex, failure, currentMana);
-                if (networkBridge != null && networkBridge.HasNetworkAuthority)
-                {
-                    networkBridge.NotifyAbilityCastResult(failureResult);
-                }
-                else
-                {
-                    ApplyAbilityResult(failureResult, true);
-                }
-                return;
-            }
-
-            var ability = abilities[abilityIndex];
-            StartCoroutine(ServerCastAbilityCoroutine(request, ability, senderClientId));
-        }
-
-        private IEnumerator ServerCastAbilityCoroutine(AbilityCastRequest request, EnhancedAbility ability, ulong senderClientId)
-        {
-            int abilityIndex = request.AbilityIndex;
-            abilityLocked[abilityIndex] = true;
-
-            if (!ConsumeMana(ability.manaCost))
-            {
-                abilityLocked[abilityIndex] = false;
-                var failureResult = AbilityCastResult.CreateFailure(request.RequestId, abilityIndex, AbilityFailureCode.InsufficientMana, currentMana);
-                if (networkBridge != null && networkBridge.HasNetworkAuthority)
-                {
-                    networkBridge.NotifyAbilityCastResult(failureResult);
-                }
-                else
-                {
-                    ApplyAbilityResult(failureResult, true);
-                }
-                yield break;
-            }
-
-            EnterCombat();
-
-            if (ability.castTime > 0f)
-            {
-                yield return new WaitForSeconds(ability.castTime);
-            }
-
-            var hitBuffer = RentHitBuffer();
-            ExecuteAbilityEffect(abilityIndex, ability, hitBuffer);
-
-            float modifiedCooldown = GetModifiedCooldown(ability.cooldown);
-            cooldowns[abilityIndex] = modifiedCooldown;
-            lastCastTime = Time.time;
-            abilityLocked[abilityIndex] = false;
-
-            OnAbilityCast?.Invoke(abilityIndex);
-            OnCooldownUpdate?.Invoke(abilityIndex, cooldowns[abilityIndex]);
-
-            var result = AbilityCastResult.CreateSuccess(request.RequestId, abilityIndex, currentMana, modifiedCooldown, globalCooldown, hitBuffer);
-            if (networkBridge != null && networkBridge.HasNetworkAuthority)
-            {
-                networkBridge.NotifyAbilityCastResult(result);
-            }
-            else
-            {
-                ApplyAbilityResult(result, true);
-            }
-
-            ReturnHitBuffer(hitBuffer);
-        }
-
-        internal void ApplyAbilityResult(AbilityCastResult result, bool isServerAuthority)
-        {
-            int abilityIndex = result.AbilityIndex;
-            var ability = abilityIndex >= 0 && abilityIndex < abilities.Length ? abilities[abilityIndex] : null;
-
-            if (result.Approved)
-            {
-                currentMana = result.CurrentMana;
-                OnManaChanged?.Invoke(currentMana, maxMana);
-
-                cooldowns[abilityIndex] = result.CooldownSeconds;
-                if (!isServerAuthority)
-                {
-                    OnCooldownUpdate?.Invoke(abilityIndex, cooldowns[abilityIndex]);
-                }
-
-                lastCastTime = Time.time;
-
-                if (!isServerAuthority)
-                {
-                    EnterCombat();
-                    OnAbilityCast?.Invoke(abilityIndex);
-
-                    if (ability != null)
-                    {
-                        CreateCastEffect(ability);
-                        UnifiedEventSystem.PublishLocal(new AbilityUsedEvent(
-                            gameObject, ability.abilityName, ability.manaCost, ability.cooldown,
-                            transform.position, null));
-                    }
-                }
-            }
-            else if (!isServerAuthority)
-            {
-                HandleLocalAbilityFailure(abilityIndex, result.FailureCode);
-            }
-        }
-
-        private void ExecuteAbilityEffect(int abilityIndex, EnhancedAbility ability, List<AbilityHitResult> hitBuffer = null)
-        {
-            // Apply damage to enemies in range
-            int numTargets = Physics.OverlapSphereNonAlloc(transform.position, ability.range, overlapBuffer);
-            int hitCount = 0;
-            for (int i = 0; i < numTargets; i++)
-            {
-                var target = overlapBuffer[i];
-                if (target.CompareTag("Enemy") && target != this.GetComponent<Collider>())
-                {
-                    var damageable = target.GetComponent<IDamageable>();
-                    if (damageable != null)
-                    {
-                        damageable.TakeDamage(ability.damage);
-                        if (hitBuffer != null)
-                        {
-                            var networkObject = target.GetComponent<NetworkObject>();
-                            if (networkObject != null)
-                            {
-                                hitBuffer.Add(new AbilityHitResult
-                                {
-                                    TargetNetworkId = networkObject.NetworkObjectId,
-                                    AppliedDamage = ability.damage,
-                                    RemainingHealth = damageable.GetHealth(),
-                                    IsDead = damageable.IsDead()
-                                });
-                            }
-                        }
-                        hitCount++;
-                        // Create hit effect
-                        CreateHitEffect(target.transform.position);
-                        if (hitCount >= ability.maxTargets)
-                            break;
-                    }
-                }
-            }
             
-            // Create cast effect
-            CreateCastEffect(ability);
-            UnifiedEventSystem.PublishLocal(new AbilityUsedEvent(
-                gameObject, ability.abilityName, ability.manaCost, ability.cooldown,
-                transform.position, null));
-        }
-
-        #endregion
-
-        private List<AbilityHitResult> RentHitBuffer()
-        {
-            if (serverHitBufferPool.Count > 0)
-            {
-                var buffer = serverHitBufferPool.Pop();
-                buffer.Clear();
-                return buffer;
-            }
-
-            return new List<AbilityHitResult>(8);
-        }
-
-        private void ReturnHitBuffer(List<AbilityHitResult> buffer)
-        {
-            if (buffer == null)
-            {
-                return;
-            }
-
-            buffer.Clear();
-
-            // Clamp capacity to avoid unbounded growth if a large hit list occurs once.
-            if (buffer.Capacity > 128)
-            {
-                buffer.Capacity = 128;
-            }
-
-            serverHitBufferPool.Push(buffer);
-        }
-
-        #region Effects
-        
-        private void CreateCastEffect(EnhancedAbility ability)
-        {
-            // Simple visual effect for ability casting
-            if (ability.enableParticleEffect)
-            {
-                EffectPoolService.SpawnSphereBurst(
-                    transform.position,
-                    ability.effectColor,
-                    ability.range * 0.5f,
-                    5,
-                    0.75f,
-                    0.1f,
-                    null);
-            }
-        }
-
-        private void CreateHitEffect(Vector3 position)
-        {
-            EffectPoolService.SpawnSphereEffect(position, Color.red, 0.3f, 0.4f, null);
+            return ExecutionManager.TryCastAbility(abilityIndex);
         }
         
-        #endregion
-        
-        #region Public Interface
-        
+        /// <summary>
+        /// Check if an ability is ready to cast
+        /// </summary>
+        /// <param name="abilityIndex">Index of ability to check</param>
+        /// <returns>True if ability is ready</returns>
         public bool IsAbilityReady(int abilityIndex)
         {
-            if (abilityIndex < 0 || abilityIndex >= abilities.Length) return false;
-            return cooldowns[abilityIndex] <= 0 && !abilityLocked[abilityIndex];
+            if (!isInitialized || CooldownManager == null)
+            {
+                return false;
+            }
+            
+            return CooldownManager.IsAbilityReady(abilityIndex);
         }
         
-        public float GetCooldownRemaining(int abilityIndex)
-        {
-            if (abilityIndex < 0 || abilityIndex >= abilities.Length) return 0f;
-            return Mathf.Max(0f, cooldowns[abilityIndex]);
-        }
-        
-        public EnhancedAbility GetAbility(int abilityIndex)
-        {
-            if (abilityIndex < 0 || abilityIndex >= abilities.Length)
-            {
-                GameDebug.LogWarning(
-                    BuildContext(GameDebugMechanicTag.Validation),
-                    "GetAbility called with invalid index.",
-                    ("Index", abilityIndex));
-                return null;
-            }
-            return abilities[abilityIndex];
-        }
-
-        public void SetAbility(int abilityIndex, EnhancedAbility ability)
-        {
-            if (abilityIndex < 0)
-            {
-                GameDebug.LogWarning(
-                    BuildContext(GameDebugMechanicTag.Validation),
-                    "SetAbility called with negative index.",
-                    ("Index", abilityIndex));
-                return;
-            }
-            // Dynamically resize array if needed
-            bool resized = false;
-
-            if (abilityIndex >= abilities.Length)
-            {
-                int oldLen = abilities.Length;
-                System.Array.Resize(ref abilities, abilityIndex + 1);
-                for (int i = oldLen; i < abilities.Length; i++)
-                {
-                    abilities[i] = null;
-                    cooldowns[i] = 0f;
-                    abilityLocked[i] = false;
-                }
-                resized = true;
-            }
-            abilities[abilityIndex] = ability;
-
-            if (resized)
-            {
-                HandleAbilityLayoutChanged();
-            }
-        }
-
-        public void RemoveAbility(int abilityIndex)
-        {
-            if (abilityIndex < 0 || abilityIndex >= abilities.Length)
-            {
-                GameDebug.LogWarning(
-                    BuildContext(GameDebugMechanicTag.Validation),
-                    "RemoveAbility called with invalid index.",
-                    ("Index", abilityIndex));
-                return;
-            }
-            abilities[abilityIndex] = null;
-            cooldowns[abilityIndex] = 0f;
-            abilityLocked[abilityIndex] = false;
-            HandleAbilityLayoutChanged();
-        }
-
-        public int AddAbility(EnhancedAbility ability)
-        {
-            // Find first empty slot or expand
-            for (int i = 0; i < abilities.Length; i++)
-            {
-                if (abilities[i] == null)
-                {
-                    abilities[i] = ability;
-                    return i;
-                }
-            }
-            // Expand array
-            int newIndex = abilities.Length;
-            System.Array.Resize(ref abilities, newIndex + 1);
-            abilities[newIndex] = ability;
-            cooldowns[newIndex] = 0f;
-            abilityLocked[newIndex] = false;
-            HandleAbilityLayoutChanged();
-            return newIndex;
-        }
-        
-        public void ResetAllCooldowns()
-        {
-            for (int i = 0; i < abilities.Length; i++)
-            {
-                cooldowns[i] = 0f;
-                OnCooldownUpdate?.Invoke(i, 0f);
-            }
-        }
-
-        public void SetMaxMana(float newMaxMana)
-        {
-            float percentage = ManaPercentage;
-            maxMana = newMaxMana;
-            currentMana = maxMana * percentage;
-            OnManaChanged?.Invoke(currentMana, maxMana);
-        }
-
-        public void SetInputEnabled(bool enabled)
-        {
-            inputEnabled = enabled;
-            if (!isActiveAndEnabled) return;
-            ApplyInputActionState(enabled);
-        }
-
-        #endregion
-
-        #region Input Integration
-
-        private void InitializeInputActions()
-        {
-            if (!enableInternalInputActions)
-            {
-                return;
-            }
-
-            if (abilities == null)
-            {
-                abilities = new EnhancedAbility[4];
-            }
-
-            if (abilityActionNames == null || abilityActionNames.Length == 0)
-            {
-                abilityActionNames = new[] { "Ability1", "Ability2", "Ability3", "Ability4" };
-            }
-
-            if (inputActions == null)
-            {
-                var playerInput = GetComponentInParent<PlayerInput>();
-                if (playerInput != null)
-                {
-                    inputActions = playerInput.actions;
-                }
-            }
-
-            if (inputActionsInitialized)
-            {
-                HandleAbilityLayoutChanged();
-                return;
-            }
-
-            inputActionsInitialized = true;
-            RebuildAbilityInputBindings();
-        }
-
-        private void ApplyInputActionState(bool enable)
-        {
-            if (!enableInternalInputActions || abilityInputActions == null)
-            {
-                return;
-            }
-
-            foreach (var action in abilityInputActions)
-            {
-                if (action == null) continue;
-                if (enable)
-                {
-                    if (!action.enabled)
-                    {
-                        action.Enable();
-                    }
-                }
-                else if (action.enabled)
-                {
-                    action.Disable();
-                }
-            }
-        }
-
-        private void CleanupInputActions()
-        {
-            if (!enableInternalInputActions)
-            {
-                abilityInputActions = null;
-                abilityActionHandlers = null;
-                return;
-            }
-
-            if (abilityInputActions != null && abilityActionHandlers != null)
-            {
-                int length = Mathf.Min(abilityInputActions.Length, abilityActionHandlers.Length);
-                for (int i = 0; i < length; i++)
-                {
-                    if (abilityInputActions[i] != null && abilityActionHandlers[i] != null)
-                    {
-                        abilityInputActions[i].performed -= abilityActionHandlers[i];
-                    }
-                }
-            }
-
-            abilityInputActions = null;
-            abilityActionHandlers = null;
-        }
-
-        private void RebuildAbilityInputBindings()
-        {
-            if (!enableInternalInputActions)
-            {
-                return;
-            }
-
-            CleanupInputActions();
-
-            if (abilities == null)
-            {
-                abilities = new EnhancedAbility[4];
-            }
-
-            if (abilityActionNames == null || abilityActionNames.Length == 0)
-            {
-                abilityActionNames = new[] { "Ability1", "Ability2", "Ability3", "Ability4" };
-            }
-
-            if (inputActions == null)
-            {
-                var playerInput = GetComponentInParent<PlayerInput>();
-                if (playerInput != null)
-                {
-                    inputActions = playerInput.actions;
-                }
-            }
-
-            int abilityCount = abilities.Length;
-            abilityInputActions = new InputAction[abilityCount];
-            abilityActionHandlers = new System.Action<InputAction.CallbackContext>[abilityCount];
-
-            if (inputActions == null)
-            {
-                return;
-            }
-
-            for (int i = 0; i < abilityCount; i++)
-            {
-                if (abilityActionNames == null || i >= abilityActionNames.Length)
-                {
-                    GameDebug.LogWarning(
-                        BuildContext(GameDebugMechanicTag.Input),
-                        "No input action configured for ability slot.",
-                        ("Slot", i));
-                    continue;
-                }
-
-                string actionName = abilityActionNames[i];
-
-                if (string.IsNullOrEmpty(actionName))
-                {
-                    continue;
-                }
-
-                var action = inputActions.FindAction(actionName, throwIfNotFound: false);
-                if (action == null)
-                {
-                    GameDebug.LogWarning(
-                        BuildContext(GameDebugMechanicTag.Input),
-                        "Input action not found for enhanced ability binding.",
-                        ("Action", actionName));
-                    continue;
-                }
-
-                abilityInputActions[i] = action;
-                int abilityIndex = i;
-                abilityActionHandlers[i] = ctx =>
-                {
-                    if (!inputEnabled || !isActiveAndEnabled)
-                    {
-                        return;
-                    }
-                    TryCastAbility(abilityIndex);
-                };
-                action.performed += abilityActionHandlers[i];
-            }
-
-            ApplyInputActionState(inputEnabled);
-        }
-
-        private void HandleAbilityLayoutChanged()
-        {
-            if (!enableInternalInputActions || !inputActionsInitialized)
-            {
-                return;
-            }
-
-            if (abilityInputActions != null && abilityInputActions.Length == abilities.Length)
-            {
-                return;
-            }
-
-            RebuildAbilityInputBindings();
-        }
-
-        #endregion
-
-        private void DetectLegacyInputHandler()
-        {
-            if (!enableInternalInputActions)
-            {
-                return;
-            }
-
-            if (TryGetComponent<SimpleInputHandler>(out _))
-            {
-                enableInternalInputActions = false;
-                GameDebug.Log(BuildContext(GameDebugMechanicTag.Input),
-                    "Detected SimpleInputHandler; internal input bindings disabled to avoid duplicate listeners.");
-            }
-        }
-
-        #region External Combat Triggers
-
         /// <summary>
-        /// Allows external systems (e.g., being attacked) to force the player into combat state.
+        /// Get remaining cooldown for an ability
+        /// </summary>
+        /// <param name="abilityIndex">Index of ability</param>
+        /// <returns>Remaining cooldown in seconds</returns>
+        public float GetAbilityCooldown(int abilityIndex)
+        {
+            if (!isInitialized || CooldownManager == null)
+            {
+                return 0f;
+            }
+            
+            return CooldownManager.GetCooldownRemaining(abilityIndex);
+        }
+        
+        /// <summary>
+        /// Check if sufficient mana is available for an ability
+        /// </summary>
+        /// <param name="manaCost">Mana cost to check</param>
+        /// <returns>True if sufficient mana</returns>
+        public bool HasSufficientMana(float manaCost)
+        {
+            if (!isInitialized || ResourceManager == null)
+            {
+                return false;
+            }
+            
+            return ResourceManager.HasSufficientMana(manaCost);
+        }
+        
+        /// <summary>
+        /// Force enter combat state
         /// </summary>
         public void ForceEnterCombat()
         {
-            EnterCombat();
+            if (isInitialized && CombatManager != null)
+            {
+                CombatManager.ForceEnterCombat();
+            }
         }
-
+        
+        /// <summary>
+        /// Enable input processing
+        /// </summary>
+        public void EnableInput()
+        {
+            if (isInitialized && InputManager != null)
+            {
+                InputManager.EnableInput();
+            }
+        }
+        
+        /// <summary>
+        /// Disable input processing
+        /// </summary>
+        public void DisableInput()
+        {
+            if (isInitialized && InputManager != null)
+            {
+                InputManager.DisableInput();
+            }
+        }
+        
+        /// <summary>
+        /// Set key binding for an ability
+        /// </summary>
+        /// <param name="abilityIndex">Ability index</param>
+        /// <param name="keyCode">Key to bind</param>
+        public void SetKeyBinding(int abilityIndex, KeyCode keyCode)
+        {
+            if (isInitialized && InputManager != null)
+            {
+                InputManager.SetKeyBinding(abilityIndex, keyCode);
+            }
+        }
+        
+        /// <summary>
+        /// Set current cooldown reduction
+        /// </summary>
+        /// <param name="reduction">Cooldown reduction percentage (0-1)</param>
+        public void SetCooldownReduction(float reduction)
+        {
+            if (isInitialized && CooldownManager != null)
+            {
+                CooldownManager.SetCooldownReduction(reduction);
+            }
+        }
+        
+        /// <summary>
+        /// Restore mana amount
+        /// </summary>
+        /// <param name="amount">Amount to restore</param>
+        public void RestoreMana(float amount)
+        {
+            if (isInitialized && ResourceManager != null)
+            {
+                ResourceManager.RestoreMana(amount);
+            }
+        }
+        
+        /// <summary>
+        /// Set ability at given index
+        /// </summary>
+        /// <param name="abilityIndex">Index to set ability at</param>
+        /// <param name="ability">Ability to set</param>
+        public void SetAbility(int abilityIndex, EnhancedAbility ability)
+        {
+            if (abilityIndex >= 0 && abilityIndex < abilities.Length)
+            {
+                abilities[abilityIndex] = ability;
+            }
+        }
+        
+        /// <summary>
+        /// Get remaining cooldown for an ability
+        /// </summary>
+        /// <param name="abilityIndex">Index of ability</param>
+        /// <returns>Remaining cooldown in seconds</returns>
+        public float GetCooldownRemaining(int abilityIndex)
+        {
+            if (!isInitialized || CooldownManager == null)
+            {
+                return 0f;
+            }
+            
+            return CooldownManager.GetCooldownRemaining(abilityIndex);
+        }
+        
+        /// <summary>
+        /// Set input processing enabled state
+        /// </summary>
+        /// <param name="enabled">True to enable input, false to disable</param>
+        public void SetInputEnabled(bool enabled)
+        {
+            if (!isInitialized || InputManager == null)
+            {
+                return;
+            }
+            
+            if (enabled)
+            {
+                InputManager.EnableInput();
+            }
+            else
+            {
+                InputManager.DisableInput();
+            }
+        }
+        
+        /// <summary>
+        /// Check if has sufficient mana for cost
+        /// </summary>
+        /// <param name="manaCost">Mana cost to check</param>
+        /// <returns>True if has sufficient mana</returns>
+        public bool HasMana(float manaCost)
+        {
+            if (!isInitialized || ResourceManager == null)
+            {
+                return false;
+            }
+            
+            return ResourceManager.HasSufficientMana(manaCost);
+        }
+        
+        /// <summary>
+        /// Consume mana amount
+        /// </summary>
+        /// <param name="amount">Amount to consume</param>
+        /// <returns>True if mana was consumed successfully</returns>
+        public bool ConsumeMana(float amount)
+        {
+            if (!isInitialized || ResourceManager == null)
+            {
+                return false;
+            }
+            
+            return ResourceManager.TryConsumeMana(amount);
+        }
+        
+        /// <summary>
+        /// Set maximum mana
+        /// </summary>
+        /// <param name="maxMana">New maximum mana value</param>
+        public void SetMaxMana(float maxMana)
+        {
+            if (isInitialized && ResourceManager != null)
+            {
+                ResourceManager.UpdateConfiguration(maxMana, 5f, 2f); // Use default values for other params
+            }
+        }
+        
+        /// <summary>
+        /// Reset all ability cooldowns
+        /// </summary>
+        public void ResetAllCooldowns()
+        {
+            if (isInitialized && CooldownManager != null)
+            {
+                // Reset cooldowns for all abilities
+                for (int i = 0; i < abilities.Length; i++)
+                {
+                    CooldownManager.ResetCooldown(i);
+                }
+            }
+        }
+        
+        #endregion
+        
+        #region Network Integration
+        
+        /// <summary>
+        /// Attach network bridge for ability synchronization
+        /// </summary>
+        /// <param name="bridge">Network controller bridge</param>
+        internal void AttachNetworkBridge(AbilityNetworkController bridge)
+        {
+            networkBridge = bridge;
+            
+            if (isInitialized && ExecutionManager != null)
+            {
+                ExecutionManager.AttachNetworkBridge(bridge);
+            }
+            
+            if (logSystemEvents)
+            {
+                GameDebug.Log(
+                    BuildContext(),
+                    "Network bridge attached.");
+            }
+        }
+        
+        /// <summary>
+        /// Detach network bridge
+        /// </summary>
+        /// <param name="bridge">Network controller bridge</param>
+        internal void DetachNetworkBridge(AbilityNetworkController bridge)
+        {
+            if (networkBridge == bridge)
+            {
+                networkBridge = null;
+                
+                if (logSystemEvents)
+                {
+                    GameDebug.Log(
+                        BuildContext(),
+                        "Network bridge detached.");
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Handle ability cast request from network
+        /// </summary>
+        /// <param name="request">Network ability cast request</param>
+        /// <param name="senderClientId">Client ID of sender</param>
+        internal void HandleAbilityCastRequest(AbilityCastRequest request, ulong senderClientId)
+        {
+            if (!isInitialized)
+            {
+                return;
+            }
+            
+            // Validate request and attempt to cast
+            if (request.AbilityIndex >= 0 && request.AbilityIndex < abilities.Length)
+            {
+                TryCastAbility(request.AbilityIndex);
+            }
+            
+            if (logSystemEvents)
+            {
+                GameDebug.Log(
+                    BuildContext(GameDebugMechanicTag.Networking),
+                    "Network ability cast request received.",
+                    ("AbilityIndex", request.AbilityIndex),
+                    ("SenderClientId", senderClientId));
+            }
+        }
+        
+        /// <summary>
+        /// Apply ability result from network
+        /// </summary>
+        /// <param name="result">Network ability cast result</param>
+        /// <param name="isServerAuthority">Whether this is server authoritative</param>
+        internal void ApplyAbilityResult(AbilityCastResult result, bool isServerAuthority)
+        {
+            if (!isInitialized)
+            {
+                return;
+            }
+            
+            // Apply result based on server authority
+            // This would be implemented based on specific network requirements
+            
+            if (logSystemEvents)
+            {
+                GameDebug.Log(
+                    BuildContext(GameDebugMechanicTag.Networking),
+                    "Network ability result applied.",
+                    ("AbilityIndex", result.AbilityIndex),
+                    ("Success", result.Approved),
+                    ("ServerAuthority", isServerAuthority));
+            }
+        }
+        
+        #endregion
+        
+        #region Helper Methods
+        
+        /// <summary>
+        /// Build debug context for system logging
+        /// </summary>
+        private GameDebugContext BuildContext(GameDebugMechanicTag tag = GameDebugMechanicTag.General)
+        {
+            return new GameDebugContext(
+                GameDebugCategory.Ability,
+                GameDebugSystemTag.Ability,
+                tag,
+                subsystem: nameof(EnhancedAbilitySystem),
+                actor: gameObject?.name);
+        }
+        
         #endregion
     }
     
+    #region Supporting Types
+    
     /// <summary>
-    /// Enhanced ability data with more features than SimpleAbility
+    /// Enhanced ability data with configuration for effects, costs, and behavior
     /// </summary>
     [CreateAssetMenu(fileName = "EnhancedAbility", menuName = "MOBA/Abilities/Enhanced Ability")]
     public class EnhancedAbility : ScriptableObject
@@ -1008,6 +764,9 @@ namespace MOBA.Abilities
         public float criticalMultiplier = 1.5f;
     }
     
+    /// <summary>
+    /// Type of ability effect
+    /// </summary>
     public enum AbilityType
     {
         Instant,    // Immediate effect
@@ -1018,6 +777,9 @@ namespace MOBA.Abilities
         Heal        // Healing ability
     }
     
+    /// <summary>
+    /// Valid target types for abilities
+    /// </summary>
     public enum TargetType
     {
         Enemy,
@@ -1025,4 +787,6 @@ namespace MOBA.Abilities
         Self,
         All
     }
+    
+    #endregion
 }

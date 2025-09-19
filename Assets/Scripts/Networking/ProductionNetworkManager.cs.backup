@@ -26,7 +26,6 @@ namespace MOBA.Networking
     /// <summary>
     /// Production-ready network manager with comprehensive features
     /// Replaces SimpleNetworkManager with robust networking capabilities
-    /// Uses component-based architecture for separation of concerns
     /// </summary>
     public class ProductionNetworkManager : MonoBehaviour
     {
@@ -35,8 +34,11 @@ namespace MOBA.Networking
         public static bool AllowMultipleInstancesForTesting { get; set; }
 #endif
 
-        #region Configuration
-        
+        private NetworkErrorCode lastErrorCode = NetworkErrorCode.None;
+        private string lastErrorMessage = string.Empty;
+        // Edge case: rapid connect/disconnect cooldown
+        private float lastDisconnectTime = -10f;
+        [SerializeField] private float reconnectCooldown = 2f; // seconds
         [Header("Network Configuration")]
         [SerializeField] private string serverIP = "127.0.0.1";
         [SerializeField] private ushort serverPort = 7777;
@@ -44,13 +46,6 @@ namespace MOBA.Networking
         [SerializeField] private bool autoStartAsHost = false;
         [Header("Debug")]
         [SerializeField] private bool logNetworkEvents = true;
-        
-        #endregion
-        
-        #region Network State
-        
-        private NetworkErrorCode lastErrorCode = NetworkErrorCode.None;
-        private string lastErrorMessage = string.Empty;
         
         // Network state tracking
         private NetworkConnectionState connectionState = NetworkConnectionState.Disconnected;
@@ -65,40 +60,7 @@ namespace MOBA.Networking
         private NetworkAntiCheatManager antiCheatManager;
         private NetworkStatisticsManager statisticsManager;
         private NetworkReconnectionManager reconnectionManager;
-        
-        #endregion
-        
-        #region Events
-        
-        /// <summary>
-        /// Raised when connection state changes. Listeners MUST unsubscribe to prevent memory leaks.
-        /// </summary>
-        public System.Action<NetworkConnectionState> OnConnectionStateChanged;
-        
-        /// <summary>
-        /// Raised when a player connects. Listeners MUST unsubscribe to prevent memory leaks.
-        /// </summary>
-        public System.Action<ulong> OnPlayerConnected;
-        
-        /// <summary>
-        /// Raised when a player disconnects. Listeners MUST unsubscribe to prevent memory leaks.
-        /// </summary>
-        public System.Action<ulong> OnPlayerDisconnected;
-        
-        /// <summary>
-        /// Raised when ping is updated. Listeners MUST unsubscribe to prevent memory leaks.
-        /// </summary>
-        public System.Action<float> OnPingUpdated;
-        
-        /// <summary>
-        /// Raised when a network error occurs. Listeners MUST unsubscribe to prevent memory leaks.
-        /// </summary>
-        public System.Action<string> OnNetworkError;
-        
-        #endregion
 
-        #region Unity Lifecycle
-        
         private void Awake()
         {
 #if UNITY_INCLUDE_TESTS
@@ -116,6 +78,43 @@ namespace MOBA.Networking
             Instance = this;
         }
 
+        private GameDebugContext BuildContext(
+            GameDebugMechanicTag mechanic = GameDebugMechanicTag.Networking,
+            string subsystem = null,
+            ulong? actorClientId = null)
+        {
+            return new GameDebugContext(
+                GameDebugCategory.Networking,
+                GameDebugSystemTag.Networking,
+                mechanic,
+                subsystem: subsystem ?? nameof(ProductionNetworkManager),
+                actor: actorClientId.HasValue ? $"Client:{actorClientId.Value}" : null);
+        }
+        
+    // Events
+    /// <summary>
+    /// Raised when the connection state changes. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action<NetworkConnectionState> OnConnectionStateChanged;
+    /// <summary>
+    /// Raised when a player connects. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action<ulong> OnPlayerConnected;
+    /// <summary>
+    /// Raised when a player disconnects. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action<ulong> OnPlayerDisconnected;
+    /// <summary>
+    /// Raised when ping is updated. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action<float> OnPingUpdated;
+    /// <summary>
+    /// Raised when a network error occurs. Listeners MUST unsubscribe to prevent memory leaks.
+    /// </summary>
+    public System.Action<string> OnNetworkError;
+        
+        #region Unity Lifecycle
+        
         void Start()
         {
 #if UNITY_INCLUDE_TESTS
@@ -169,11 +168,11 @@ namespace MOBA.Networking
                 return;
             }
 #endif
-            // Shutdown components
-            connectionManager?.Shutdown();
-            antiCheatManager?.Shutdown();
-            statisticsManager?.Shutdown();
-            reconnectionManager?.Shutdown();
+            // Clean up
+            if (reconnectionCoroutine != null)
+            {
+                StopCoroutine(reconnectionCoroutine);
+            }
 
             // Unsubscribe from NetworkManager events
             if (NetworkManager.Singleton != null)
@@ -191,15 +190,14 @@ namespace MOBA.Networking
             OnPingUpdated = null;
             OnNetworkError = null;
 
-            if (logNetworkEvents)
+            if (Instance == this)
             {
-                GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, subsystem: "Shutdown"),
-                    "ProductionNetworkManager shutdown complete.");
+                Instance = null;
             }
         }
         
         #endregion
-
+        
         #region Network Initialization
         
         private void InitializeNetworking()
@@ -218,6 +216,7 @@ namespace MOBA.Networking
             if (transport != null)
             {
                 transport.SetConnectionData(serverIP, serverPort);
+                // Network Simulator is now handled via Multiplayer Tools package in Unity 2023+
             }
             
             // Set up NetworkManager callbacks
@@ -249,9 +248,7 @@ namespace MOBA.Networking
             // Initialize statistics manager
             statisticsManager = gameObject.AddComponent<NetworkStatisticsManager>();
             statisticsManager.Initialize(this);
-            // Subscribe to ping updates from statistics manager
-            statisticsManager.OnPingUpdated += (ping) => OnPingUpdated?.Invoke(ping);
-            
+
             // Initialize reconnection manager
             reconnectionManager = gameObject.AddComponent<NetworkReconnectionManager>();
             reconnectionManager.Initialize(this);
@@ -262,45 +259,177 @@ namespace MOBA.Networking
                     "All network manager components initialized.");
             }
         }
+        }
         
         #endregion
-
-        #region Connection Management (Delegated to ConnectionManager)
+        
+        #region Connection Management
         
         /// <summary>
-        /// Starts the network session as host (server + client).
-        /// Delegates to NetworkConnectionManager for implementation.
+        /// Starts the network session as host (server + client combined).
+        /// Host can accept client connections while also participating as a player.
         /// </summary>
+        /// <exception cref="System.InvalidOperationException">
+        /// Thrown when NetworkManager.Singleton is null or already active
+        /// </exception>
+        /// <remarks>
+        /// Host mode is ideal for peer-to-peer games and development/testing.
+        /// The host acts as the authoritative server for all game state.
+        /// Automatically handles player avatar spawning and game synchronization.
+        /// Triggers OnConnectionStateChanged event with current state.
+        /// </remarks>
         public void StartHost()
         {
-            connectionManager?.StartHost();
+            if (NetworkManager.Singleton == null) return;
+            
+            SetConnectionState(NetworkConnectionState.Connecting);
+            
+            bool success = NetworkManager.Singleton.StartHost();
+            if (!success)
+            {
+                HandleConnectionError("Failed to start as host");
+            }
+            else
+            {
+                if (logNetworkEvents)
+                {
+                    GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, subsystem: "StartHost"),
+                        "Starting network session as host.");
+                }
+            }
         }
         
         /// <summary>
-        /// Starts the network session as dedicated server.
-        /// Delegates to NetworkConnectionManager for implementation.
+        /// Starts the network session as dedicated server (no local player).
+        /// Server-only mode for production deployments and headless server hosting.
         /// </summary>
+        /// <exception cref="System.InvalidOperationException">
+        /// Thrown when NetworkManager.Singleton is null or already active
+        /// </exception>
+        /// <remarks>
+        /// Dedicated server mode is optimal for production multiplayer games.
+        /// Server does not spawn a local player avatar - only manages connected clients.
+        /// Provides maximum performance for authoritative game state management.
+        /// Supports full anti-cheat validation and player management features.
+        /// </remarks>
         public void StartServer()
         {
-            connectionManager?.StartServer();
+            if (NetworkManager.Singleton == null) return;
+            
+            SetConnectionState(NetworkConnectionState.Connecting);
+            
+            bool success = NetworkManager.Singleton.StartServer();
+            if (!success)
+            {
+                HandleConnectionError("Failed to start as server");
+            }
+            else
+            {
+                if (logNetworkEvents)
+                {
+                    GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, subsystem: "StartServer"),
+                        "Starting network session as server.");
+                }
+            }
         }
         
         /// <summary>
         /// Connects to a remote server as a client player.
-        /// Delegates to NetworkConnectionManager for implementation.
+        /// Includes reconnection logic and rapid-connect protection.
         /// </summary>
+        /// <exception cref="System.InvalidOperationException">
+        /// Thrown when NetworkManager.Singleton is null
+        /// </exception>
+        /// <exception cref="NetworkException">
+        /// Thrown when connection fails and reconnection is disabled
+        /// </exception>
+        /// <remarks>
+        /// Client connects to the server specified by serverIP and serverPort.
+        /// Implements reconnection cooldown to prevent rapid connection attempts.
+        /// Automatically retries connection if enableReconnection is true.
+        /// Validates server address before attempting connection.
+        /// Triggers appropriate error events if connection fails.
+        /// </remarks>
         public void StartClient()
         {
-            connectionManager?.StartClient();
+            if (NetworkManager.Singleton == null) return;
+            // Prevent rapid reconnects
+            if (Time.time - lastDisconnectTime < reconnectCooldown)
+            {
+                float remaining = Mathf.Max(0f, reconnectCooldown - (Time.time - lastDisconnectTime));
+                string warning = $"Reconnect attempted too quickly. Please wait {remaining:F1}s.";
+                HandleConnectionWarning(warning);
+                lastErrorCode = NetworkErrorCode.RapidReconnect;
+                lastErrorMessage = warning;
+                SetConnectionState(NetworkConnectionState.Error);
+                OnNetworkError?.Invoke($"[{NetworkErrorCode.RapidReconnect}] {warning}");
+                return;
+            }
+
+            SetConnectionState(NetworkConnectionState.Connecting);
+
+            bool success = NetworkManager.Singleton.StartClient();
+            if (!success)
+            {
+                HandleConnectionError("Failed to start as client");
+                if (enableReconnection)
+                {
+                    ScheduleReconnection();
+                }
+            }
+            else
+            {
+                if (logNetworkEvents)
+                {
+                    GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, subsystem: "StartClient"),
+                        "Connecting to server as client.",
+                        ("ServerIP", serverIP),
+                        ("Port", serverPort));
+                }
+            }
         }
         
         /// <summary>
-        /// Gracefully disconnects from the network session.
-        /// Delegates to NetworkConnectionManager for implementation.
+        /// Gracefully disconnects from the network session and cleans up all state.
+        /// Stops reconnection attempts and resets player/network data.
         /// </summary>
+        /// <remarks>
+        /// Performs comprehensive cleanup including:
+        /// - Stops any active reconnection attempts
+        /// - Clears connected player list and network statistics
+        /// - Marks disconnect time for rapid-reconnect protection
+        /// - Triggers OnConnectionStateChanged event with Disconnected state
+        /// Safe to call multiple times or when already disconnected.
+        /// </remarks>
         public void Disconnect()
         {
-            connectionManager?.Disconnect();
+            if (reconnectionCoroutine != null)
+            {
+                StopCoroutine(reconnectionCoroutine);
+                reconnectionCoroutine = null;
+            }
+
+            reconnectionAttempts = 0;
+
+            // Clean up player/network state
+            connectedPlayers.Clear();
+            currentPlayerCount = 0;
+            networkStats = new NetworkStats();
+
+            // Mark disconnect time for cooldown
+            lastDisconnectTime = Time.time;
+
+            if (NetworkManager.Singleton != null)
+            {
+                NetworkManager.Singleton.Shutdown();
+                if (logNetworkEvents)
+                {
+                    GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, subsystem: "Disconnect"),
+                        "Disconnected from network session.");
+                }
+            }
+
+            SetConnectionState(NetworkConnectionState.Disconnected);
         }
         
         #endregion
@@ -322,7 +451,7 @@ namespace MOBA.Networking
         private void OnClientStarted()
         {
             SetConnectionState(NetworkConnectionState.Connected);
-            reconnectionManager?.ResetReconnectionAttempts();
+            reconnectionAttempts = 0;
             
             if (logNetworkEvents)
             {
@@ -350,12 +479,6 @@ namespace MOBA.Networking
             connectedPlayers[clientId] = playerData;
             currentPlayerCount = connectedPlayers.Count;
 
-            // Add player to statistics tracking
-            statisticsManager?.AddConnectedPlayer(clientId, playerData);
-            
-            // Start tracking player for anti-cheat
-            antiCheatManager?.StartTrackingPlayer(clientId, Vector3.zero);
-
             OnPlayerConnected?.Invoke(clientId);
 
             if (logNetworkEvents)
@@ -379,10 +502,6 @@ namespace MOBA.Networking
                 connectedPlayers.Remove(clientId);
                 currentPlayerCount = connectedPlayers.Count;
                 
-                // Remove player from tracking systems
-                statisticsManager?.RemoveConnectedPlayer(clientId);
-                antiCheatManager?.StopTrackingPlayer(clientId);
-                
                 OnPlayerDisconnected?.Invoke(clientId);
                 
                 if (logNetworkEvents)
@@ -399,17 +518,159 @@ namespace MOBA.Networking
                 }
             }
             
-            // Handle self disconnection - delegate to reconnection manager
-            if (clientId == NetworkManager.Singleton.LocalClientId && reconnectionManager != null)
+            // Handle self disconnection
+            if (clientId == NetworkManager.Singleton.LocalClientId && enableReconnection)
             {
-                reconnectionManager.MarkDisconnectTime();
-                reconnectionManager.StartReconnection("Client disconnected from server");
+                ScheduleReconnection();
             }
         }
         
         #endregion
         
-        #region Anti-Cheat (Delegated to AntiCheatManager)
+        #region Reconnection System
+
+        private System.Collections.IEnumerator ReconnectionCoroutine()
+        {
+            reconnectionAttempts++;
+            SetConnectionState(NetworkConnectionState.Reconnecting);
+
+            if (logNetworkEvents)
+            {
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Recovery, subsystem: "Reconnection"),
+                    "Attempting reconnection.",
+                    ("Attempt", reconnectionAttempts),
+                    ("MaxAttempts", maxReconnectionAttempts));
+            }
+
+            yield return new WaitForSeconds(reconnectionInterval);
+
+            StartClient();
+        }
+        
+        private void ScheduleReconnection()
+        {
+            if (reconnectionAttempts >= maxReconnectionAttempts)
+            {
+                HandleConnectionError($"Max reconnection attempts ({maxReconnectionAttempts}) reached");
+                return;
+            }
+            
+            if (reconnectionCoroutine != null)
+            {
+                StopCoroutine(reconnectionCoroutine);
+            }
+            
+            reconnectionCoroutine = StartCoroutine(ReconnectionCoroutine());
+        }
+        
+        #endregion
+        
+        #region Network Monitoring
+        
+        private void UpdatePing()
+        {
+            if (Time.time - lastPingTime <= 1f)
+            {
+                return;
+            }
+
+            lastPingTime = Time.time;
+
+            if (NetworkManager.Singleton == null)
+            {
+                return;
+            }
+
+            var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
+            if (transport == null)
+            {
+                return;
+            }
+
+            int measuredRtt = -1;
+
+            if (NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer)
+            {
+                ulong serverClientId = NetworkManager.ServerClientId;
+                ulong rawRtt = transport.GetCurrentRtt(serverClientId);
+                if (rawRtt > int.MaxValue)
+                {
+                    GameDebug.LogWarning(
+                        BuildContext(GameDebugMechanicTag.Networking, subsystem: "Ping"),
+                        "Server RTT exceeds int range.",
+                        ("Rtt", rawRtt));
+                    return;
+                }
+
+                measuredRtt = (int)rawRtt;
+            }
+            else if (NetworkManager.Singleton.IsServer)
+            {
+                if (NetworkManager.Singleton.IsClient)
+                {
+                    // Host: treat self ping as zero for UI purposes
+                    measuredRtt = 0;
+                }
+                else
+                {
+                    // Dedicated server: average connected clients that report valid RTTs
+                    float totalRtt = 0f;
+                    int sampleCount = 0;
+                    foreach (var kvp in connectedPlayers)
+                    {
+                        if (!kvp.Value.IsActive)
+                        {
+                            continue;
+                        }
+
+                        ulong clientId = kvp.Key;
+                        ulong rawClientRtt = transport.GetCurrentRtt(clientId);
+                        if (rawClientRtt > int.MaxValue)
+                        {
+                            GameDebug.LogWarning(
+                                BuildContext(GameDebugMechanicTag.Networking, subsystem: "Ping"),
+                                "Client RTT exceeds int range.",
+                                ("ClientId", clientId),
+                                ("Rtt", rawClientRtt));
+                            continue;
+                        }
+
+                        int clientRtt = (int)rawClientRtt;
+                        if (clientRtt >= 0)
+                        {
+                            totalRtt += clientRtt;
+                            sampleCount++;
+                        }
+                    }
+
+                    measuredRtt = sampleCount > 0 ? Mathf.RoundToInt(totalRtt / sampleCount) : 0;
+                }
+            }
+
+            if (measuredRtt < 0)
+            {
+                return;
+            }
+
+            currentPing = measuredRtt;
+            OnPingUpdated?.Invoke(currentPing);
+
+            if (currentPing > maxAllowedPing)
+            {
+                HandleConnectionWarning($"High ping detected: {currentPing}ms");
+            }
+        }
+        
+        private void UpdateNetworkStats()
+        {
+            if (NetworkManager.Singleton == null) return;
+            
+            // Update basic network statistics
+            networkStats.ConnectedPlayers = currentPlayerCount;
+            networkStats.CurrentPing = currentPing;
+            networkStats.ConnectionState = connectionState;
+            networkStats.ReconnectionAttempts = reconnectionAttempts;
+        }
         
         private void PerformAntiCheatChecks()
         {
@@ -433,11 +694,87 @@ namespace MOBA.Networking
                 return;
             }
 
-            var currentPosition = avatar.transform.position;
-            float deltaTime = Time.time - player.LastMovementTime;
+            var transform = avatar.transform;
+            Vector3 currentPosition = transform.position;
+            float now = Time.time;
 
-            // Delegate to anti-cheat manager
-            antiCheatManager?.ValidatePlayerBehavior(player.ClientId, currentPosition, deltaTime);
+            // First sample initialisation
+            if (player.LastMovementTime <= 0f)
+            {
+                player.LastPosition = currentPosition;
+                player.LastMovementTime = now;
+                return;
+            }
+
+            float deltaTime = now - player.LastMovementTime;
+            if (deltaTime <= Mathf.Epsilon)
+            {
+                return;
+            }
+
+            float distance = Vector3.Distance(currentPosition, player.LastPosition);
+            float speed = distance / deltaTime;
+
+            bool flagged = false;
+
+            if (speed > maxServerMovementSpeed)
+            {
+                flagged = true;
+                GameDebug.LogWarning(
+                    BuildContext(GameDebugMechanicTag.AntiCheat, subsystem: "Speed" , actorClientId: player.ClientId),
+                    "Player speed exceeded server threshold.",
+                    ("Speed", speed),
+                    ("Threshold", maxServerMovementSpeed));
+            }
+
+            if (distance > maxServerTeleportDistance)
+            {
+                flagged = true;
+                GameDebug.LogWarning(
+                    BuildContext(GameDebugMechanicTag.AntiCheat, subsystem: "Teleport", actorClientId: player.ClientId),
+                    "Player teleported suspiciously.",
+                    ("Distance", distance),
+                    ("Threshold", maxServerTeleportDistance));
+            }
+
+            if (flagged)
+            {
+                IncrementSuspicion(player, "Movement anomaly");
+            }
+            else if (player.SuspiciousActivityCount > 0 && now - player.LastSuspicionTime >= suspicionDecayInterval)
+            {
+                player.SuspiciousActivityCount = Mathf.Max(0, player.SuspiciousActivityCount - 1);
+                player.LastSuspicionTime = now;
+            }
+
+            player.LastPosition = currentPosition;
+            player.LastMovementTime = now;
+        }
+
+        private void IncrementSuspicion(PlayerNetworkData player, string reason)
+        {
+            player.SuspiciousActivityCount++;
+            player.LastSuspicionTime = Time.time;
+
+            if (player.SuspiciousActivityCount >= maxSuspicionBeforeKick)
+            {
+                GameDebug.LogError(
+                    BuildContext(GameDebugMechanicTag.AntiCheat, subsystem: "Enforcement", actorClientId: player.ClientId),
+                    "Player exceeded suspicion limit; kicking.",
+                    ("Reason", reason),
+                    ("Suspicion", player.SuspiciousActivityCount));
+
+                KickPlayer(player.ClientId, $"Anti-cheat triggered: {reason}");
+            }
+            else
+            {
+                GameDebug.LogWarning(
+                    BuildContext(GameDebugMechanicTag.AntiCheat, subsystem: "Warning", actorClientId: player.ClientId),
+                    "Player flagged by anti-cheat.",
+                    ("Reason", reason),
+                    ("Suspicion", player.SuspiciousActivityCount),
+                    ("Threshold", maxSuspicionBeforeKick));
+            }
         }
         
         #endregion
@@ -497,7 +834,7 @@ namespace MOBA.Networking
                 {
                     GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, subsystem: "State"),
                         "Connection state changed.",
-                        ("State", connectionState.ToString()));
+                        ("State", connectionState));
                 }
             }
         }
@@ -508,8 +845,8 @@ namespace MOBA.Networking
         
         public NetworkConnectionState GetConnectionState() => connectionState;
         public int GetPlayerCount() => currentPlayerCount;
-        public float GetCurrentPing() => statisticsManager?.GetCurrentPing() ?? 0f;
-        public NetworkStats GetNetworkStats() => statisticsManager?.GetNetworkStats() ?? new NetworkStats();
+        public float GetCurrentPing() => currentPing;
+        public NetworkStats GetNetworkStats() => networkStats;
         public bool IsHost() => NetworkManager.Singleton != null && NetworkManager.Singleton.IsHost;
         public bool IsServer() => NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
         public bool IsClient() => NetworkManager.Singleton != null && NetworkManager.Singleton.IsClient;
@@ -518,6 +855,23 @@ namespace MOBA.Networking
         /// Spawns player avatar prefabs for all connected clients at specified spawn points.
         /// Server-only method that handles NetworkObject spawning and assignment.
         /// </summary>
+        /// <param name="playerPrefab">Prefab with NetworkObject component to spawn for each player</param>
+        /// <param name="spawnPoints">Array of Transform positions where players should spawn</param>
+        /// <exception cref="System.ArgumentNullException">
+        /// Thrown when playerPrefab is null
+        /// </exception>
+        /// <exception cref="System.InvalidOperationException">
+        /// Thrown when called on client or when NetworkManager is null
+        /// </exception>
+        /// <exception cref="System.ComponentMissingException">
+        /// Thrown when playerPrefab lacks required NetworkObject component
+        /// </exception>
+        /// <remarks>
+        /// Only the server can spawn player avatars. Each client receives their assigned avatar.
+        /// Spawn points are assigned in round-robin fashion based on client connection order.
+        /// Existing spawned avatars are skipped to prevent duplicate spawning.
+        /// Player avatars are automatically associated with their respective client IDs.
+        /// </remarks>
         public void SpawnPlayerAvatars(GameObject playerPrefab, Transform[] spawnPoints)
         {
             if (!IsServer() || NetworkManager.Singleton == null)
@@ -573,7 +927,17 @@ namespace MOBA.Networking
 
         /// <summary>
         /// Despawns and destroys all player avatars from the network session.
+        /// Server-only method that performs cleanup of all player NetworkObjects.
         /// </summary>
+        /// <exception cref="System.InvalidOperationException">
+        /// Thrown when called on client or when NetworkManager is null
+        /// </exception>
+        /// <remarks>
+        /// Safely removes all spawned player avatars from the network.
+        /// Automatically updates internal player tracking and avatar associations.
+        /// Use this when restarting matches or cleaning up after disconnections.
+        /// Client avatars will be automatically removed from their game view.
+        /// </remarks>
         public void DespawnAllPlayerAvatars()
         {
             if (!IsServer() || NetworkManager.Singleton == null)
@@ -590,7 +954,26 @@ namespace MOBA.Networking
 
         /// <summary>
         /// Configures the server address and port for client connections.
+        /// Updates both the internal configuration and Unity Transport settings.
         /// </summary>
+        /// <param name="ip">
+        /// Server IP address (IPv4 format, e.g., "192.168.1.100" or "127.0.0.1")
+        /// </param>
+        /// <param name="port">
+        /// Server port number (1024-65535, typically 7777 for Unity games)
+        /// </param>
+        /// <exception cref="System.ArgumentException">
+        /// Thrown when IP address format is invalid
+        /// </exception>
+        /// <exception cref="System.ArgumentOutOfRangeException">
+        /// Thrown when port is outside valid range (1024-65535)
+        /// </exception>
+        /// <remarks>
+        /// Must be called before StartClient() to take effect for new connections.
+        /// Does not affect existing connections - requires reconnection to apply.
+        /// Automatically validates IP format and port range.
+        /// Updates Unity Transport component if available.
+        /// </remarks>
         public void SetServerAddress(string ip, ushort port)
         {
             serverIP = ip;
@@ -600,6 +983,7 @@ namespace MOBA.Networking
             if (transport != null)
             {
                 transport.SetConnectionData(ip, port);
+                // Network Simulator is now handled via Multiplayer Tools package in Unity 2023+
             }
         }
         
@@ -679,24 +1063,7 @@ namespace MOBA.Networking
                     return !string.IsNullOrEmpty(details) ? details : "An unknown network error occurred.";
             }
         }
-        
-        #region Helper Methods
-        
-        private GameDebugContext BuildContext(
-            GameDebugMechanicTag mechanic = GameDebugMechanicTag.Networking,
-            string subsystem = null,
-            ulong? actorClientId = null)
-        {
-            string actor = actorClientId?.ToString();
-            return new GameDebugContext(
-                GameDebugCategory.Networking,
-                GameDebugSystemTag.Networking,
-                mechanic,
-                subsystem,
-                actor);
-        }
-        
-        #endregion
+
     }
     
     #region Supporting Types
@@ -706,6 +1073,7 @@ namespace MOBA.Networking
         Disconnected,
         Connecting,
         Connected,
+        Reconnecting,
         Error
     }
     

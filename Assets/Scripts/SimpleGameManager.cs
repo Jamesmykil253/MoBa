@@ -4,20 +4,147 @@ using MOBA.Configuration;
 using MOBA.Debugging;
 using MOBA.Networking;
 using MOBA.Services;
+using MOBA.GameManagement;
 
 namespace MOBA
 {
     /// <summary>
-    /// Simple game manager - coordinates basic MOBA gameplay
+    /// Simple game manager - coordinates basic MOBA gameplay through specialized component managers.
+    /// Refactored from monolithic 793-line class into component-based architecture following Clean Code principles.
     /// </summary>
     public class SimpleGameManager : NetworkBehaviour
     {
         public static SimpleGameManager Instance { get; private set; }
 
-        [Header("Configuration")]
+        #region Component Managers
+        
+        [Header("Game Management Components")]
+        [SerializeField, Tooltip("Configuration management component")]
+        private GameConfigurationManager configurationManager;
+        
+        [SerializeField, Tooltip("Service coordination component")]
+        private GameServiceManager serviceManager;
+        
+        [SerializeField, Tooltip("Spawn management component")]
+        private GameSpawnManager spawnManager;
+        
+        [SerializeField, Tooltip("Network synchronization component")]
+        private GameNetworkManager networkManager;
+        
+        [SerializeField, Tooltip("UI management component")]
+        private GameUIManager uiManager;
+        
+        [SerializeField, Tooltip("Event coordination component")]
+        private GameEventManager eventManager;
+        
+        [SerializeField, Tooltip("Match lifecycle component")]
+        private GameMatchLifecycleManager matchLifecycleManager;
+        
+        #endregion
+
+        #region Legacy Support (Deprecated - Use Components)
+        
+        [Header("Legacy Configuration (Use ConfigurationManager instead)")]
         [SerializeField] private GameConfig defaultGameConfig;
         [SerializeField] private bool lockGameSettingsToConfig = true;
+        
+        [Header("Legacy Game Settings (Use ConfigurationManager instead)")]
+        public int maxPlayers = 10;
+        public float gameTime = 1800f; // 30 minutes
+        public int scoreToWin = 100;
+        
+        [Header("Legacy Spawn Settings (Use SpawnManager instead)")]
+        public Transform[] playerSpawnPoints;
+        public Transform[] enemySpawnPoints;
+        public GameObject playerPrefab;
+        public GameObject enemyPrefab;
 
+        [Header("Legacy UI (Use UIManager instead)")]
+        public UnityEngine.UI.Text timeText;
+        public UnityEngine.UI.Text scoreText;
+
+        [Header("Legacy Runtime Settings (Use Components instead)")]
+        [SerializeField] private bool autoStartOnEnable = true;
+        
+        /// <summary>
+        /// Public accessor for autoStartOnEnable configuration
+        /// </summary>
+        public bool AutoStartOnEnable => autoStartOnEnable;
+        [SerializeField] private bool spawnSingleLocalPlayer = true;
+        
+        // Legacy game state - maintained for backward compatibility
+        private bool gameActive = false;
+        private IScoringService scoringService;
+        private IMatchLifecycleService matchLifecycleService;
+        private float clientTimeRemaining;
+        private const int DefaultTeamCount = 2;
+
+        // Legacy network variables - maintained for backward compatibility
+        private readonly NetworkVariable<float> networkTimeRemaining = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<int> networkTeamScoreA = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<int> networkTeamScoreB = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<bool> networkGameActive = new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<int> networkWinningTeam = new NetworkVariable<int>(-1, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+        
+        #endregion
+
+        #region Events (Legacy - Use EventManager instead)
+        
+        /// <summary>
+        /// Raised when the game ends. Listeners MUST unsubscribe to prevent memory leaks.
+        /// DEPRECATED: Use EventManager.OnGameEnded instead.
+        /// </summary>
+        public System.Action<int> OnGameEnd;
+        
+        /// <summary>
+        /// Raised when the score updates. Listeners MUST unsubscribe to prevent memory leaks.
+        /// DEPRECATED: Use ServiceManager.OnScoreChanged instead.
+        /// </summary>
+        public System.Action<int, int> OnScoreUpdate;
+        
+        #endregion
+
+        #region Component Access Properties
+        
+        /// <summary>
+        /// Access to configuration management component
+        /// </summary>
+        public GameConfigurationManager GetConfigurationManager() => configurationManager;
+        
+        /// <summary>
+        /// Access to service coordination component
+        /// </summary>
+        public GameServiceManager GetServiceManager() => serviceManager;
+        
+        /// <summary>
+        /// Access to spawn management component
+        /// </summary>
+        public GameSpawnManager GetSpawnManager() => spawnManager;
+        
+        /// <summary>
+        /// Access to network synchronization component
+        /// </summary>
+        public GameNetworkManager GetNetworkManager() => networkManager;
+        
+        /// <summary>
+        /// Access to UI management component
+        /// </summary>
+        public GameUIManager GetUIManager() => uiManager;
+        
+        /// <summary>
+        /// Access to event coordination component
+        /// </summary>
+        public GameEventManager GetEventManager() => eventManager;
+        
+        /// <summary>
+        /// Access to match lifecycle component
+        /// </summary>
+        public GameMatchLifecycleManager GetMatchLifecycleManager() => matchLifecycleManager;
+        
+        #endregion
+
+        #region Initialization
+        
         private GameDebugContext BuildContext(GameDebugMechanicTag mechanic = GameDebugMechanicTag.General)
         {
             return new GameDebugContext(
@@ -30,8 +157,6 @@ namespace MOBA
 
         private void Awake()
         {
-            ApplyConfiguredDefaultsIfNeeded();
-
             if (Instance != null && Instance != this)
             {
                 GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Configuration),
@@ -41,7 +166,12 @@ namespace MOBA
             }
 
             Instance = this;
-            InitializeServices();
+            
+            InitializeComponents();
+            InitializeLegacySupport();
+
+            GameDebug.Log(BuildContext(GameDebugMechanicTag.Initialization),
+                "SimpleGameManager initialized with component-based architecture.");
         }
 
         private void OnValidate()
@@ -49,6 +179,52 @@ namespace MOBA
             ApplyConfiguredDefaultsIfNeeded();
         }
 
+        /// <summary>
+        /// Initialize all game management components
+        /// </summary>
+        private void InitializeComponents()
+        {
+            // Find or create components if not assigned
+            if (configurationManager == null)
+                configurationManager = GetComponent<GameConfigurationManager>();
+            if (serviceManager == null)
+                serviceManager = GetComponent<GameServiceManager>();
+            if (spawnManager == null)
+                spawnManager = GetComponent<GameSpawnManager>();
+            if (networkManager == null)
+                networkManager = GetComponent<GameNetworkManager>();
+            if (uiManager == null)
+                uiManager = GetComponent<GameUIManager>();
+            if (eventManager == null)
+                eventManager = GetComponent<GameEventManager>();
+            if (matchLifecycleManager == null)
+                matchLifecycleManager = GetComponent<GameMatchLifecycleManager>();
+
+            // Initialize components
+            configurationManager?.Initialize(this);
+            serviceManager?.Initialize(this);
+            spawnManager?.Initialize(this);
+            networkManager?.Initialize(this);
+            uiManager?.Initialize(this);
+            eventManager?.Initialize(this);
+            matchLifecycleManager?.Initialize(this);
+        }
+
+        /// <summary>
+        /// Initialize legacy support for backward compatibility
+        /// </summary>
+        private void InitializeLegacySupport()
+        {
+            // Apply legacy configuration if components aren't handling it
+            ApplyConfiguredDefaultsIfNeeded();
+            
+            // Initialize legacy services for backward compatibility
+            InitializeServices();
+        }
+
+        /// <summary>
+        /// Legacy configuration application (deprecated)
+        /// </summary>
         private void ApplyConfiguredDefaultsIfNeeded()
         {
             if (!lockGameSettingsToConfig || defaultGameConfig == null)
@@ -69,6 +245,9 @@ namespace MOBA
             matchLifecycleService?.Configure(gameTime, scoreToWin);
         }
 
+        /// <summary>
+        /// Legacy service initialization (deprecated)
+        /// </summary>
         private void InitializeServices()
         {
             if (scoringService != null)
@@ -102,50 +281,24 @@ namespace MOBA
             gameActive = matchLifecycleService.IsActive;
             UpdateUI();
         }
-        [Header("Game Settings")]
-        public int maxPlayers = 10;
-        public float gameTime = 1800f; // 30 minutes
-        public int scoreToWin = 100;
-        
-        [Header("Spawn Settings")]
-        public Transform[] playerSpawnPoints;
-        public Transform[] enemySpawnPoints;
-        public GameObject playerPrefab;
-        public GameObject enemyPrefab;
 
-        [Header("UI")]
-        public UnityEngine.UI.Text timeText;
-        public UnityEngine.UI.Text scoreText;
+        #endregion
 
-        // Game state
-        private bool gameActive = false;
-        private IScoringService scoringService;
-        private IMatchLifecycleService matchLifecycleService;
-        private float clientTimeRemaining;
-        private const int DefaultTeamCount = 2;
-
-        private readonly NetworkVariable<float> networkTimeRemaining = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-        private readonly NetworkVariable<int> networkTeamScoreA = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-        private readonly NetworkVariable<int> networkTeamScoreB = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-        private readonly NetworkVariable<bool> networkGameActive = new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-        private readonly NetworkVariable<int> networkWinningTeam = new NetworkVariable<int>(-1, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-
-        [Header("Runtime")]
-        [SerializeField] private bool autoStartOnEnable = true;
-        [SerializeField] private bool spawnSingleLocalPlayer = true;
-        
-    // Events
-    /// <summary>
-    /// Raised when the game ends. Listeners MUST unsubscribe to prevent memory leaks.
-    /// </summary>
-    public System.Action<int> OnGameEnd;
-    /// <summary>
-    /// Raised when the score updates. Listeners MUST unsubscribe to prevent memory leaks.
-    /// </summary>
-    public System.Action<int, int> OnScoreUpdate;
+        #region Unity Lifecycle
         
         void Start()
         {
+            // Delegate to match lifecycle manager if available
+            if (matchLifecycleManager != null)
+            {
+                if (IsServer && networkManager != null && networkManager.ShouldAutoStart())
+                {
+                    matchLifecycleManager.StartMatch();
+                }
+                return;
+            }
+            
+            // Fallback to legacy behavior
             if (IsServer && autoStartOnEnable && !gameActive)
             {
                 StartMatch();
@@ -156,14 +309,39 @@ namespace MOBA
         {
             base.OnNetworkSpawn();
 
+            // Initialize components for network
+            InitializeComponents();
             InitializeServices();
 
+            // Setup legacy network variable listeners for backward compatibility
+            SetupLegacyNetworkListeners();
+
+            // Delegate network initialization to components
+            if (networkManager != null)
+            {
+                if (!IsServer)
+                {
+                    networkManager.InitializeClientState();
+                }
+            }
+            else
+            {
+                // Fallback to legacy behavior
+                HandleLegacyNetworkSpawn();
+            }
+        }
+
+        private void SetupLegacyNetworkListeners()
+        {
             networkTimeRemaining.OnValueChanged += OnNetworkTimeChanged;
             networkTeamScoreA.OnValueChanged += OnNetworkScoreAChanged;
             networkTeamScoreB.OnValueChanged += OnNetworkScoreBChanged;
             networkGameActive.OnValueChanged += OnNetworkGameActiveChanged;
             networkWinningTeam.OnValueChanged += OnNetworkWinningTeamChanged;
+        }
 
+        private void HandleLegacyNetworkSpawn()
+        {
             if (!IsServer)
             {
                 clientTimeRemaining = networkTimeRemaining.Value;
@@ -193,6 +371,12 @@ namespace MOBA
         {
             base.OnNetworkDespawn();
 
+            // Cleanup legacy network listeners
+            CleanupLegacyNetworkListeners();
+        }
+
+        private void CleanupLegacyNetworkListeners()
+        {
             networkTimeRemaining.OnValueChanged -= OnNetworkTimeChanged;
             networkTeamScoreA.OnValueChanged -= OnNetworkScoreAChanged;
             networkTeamScoreB.OnValueChanged -= OnNetworkScoreBChanged;
@@ -212,6 +396,33 @@ namespace MOBA
 
         void Update()
         {
+            // Update components
+            UpdateComponents();
+            
+            // Legacy update fallback
+            UpdateLegacyBehavior();
+        }
+
+        private void UpdateComponents()
+        {
+            // Update all components
+            configurationManager?.UpdateComponent();
+            serviceManager?.UpdateComponent();
+            spawnManager?.UpdateComponent();
+            networkManager?.UpdateComponent();
+            uiManager?.UpdateComponent();
+            eventManager?.UpdateComponent();
+            matchLifecycleManager?.UpdateComponent();
+        }
+
+        private void UpdateLegacyBehavior()
+        {
+            // Legacy server timing update (only if components aren't handling it)
+            if (matchLifecycleManager != null)
+            {
+                return; // Components are handling timing
+            }
+            
             if (!IsServer || matchLifecycleService == null || !matchLifecycleService.IsActive)
             {
                 return;
@@ -222,8 +433,30 @@ namespace MOBA
             networkTimeRemaining.Value = clientTimeRemaining;
             UpdateUI();
         }
+
+        #endregion
+
+        #region Public API (Delegated to Components)
         
+        /// <summary>
+        /// Starts a new match with configured settings, spawning players and enemies.
+        /// Follows server-authoritative pattern - only server can initiate matches.
+        /// DELEGATES to MatchLifecycleManager if available, falls back to legacy behavior.
+        /// </summary>
         public bool StartMatch()
+        {
+            // Delegate to match lifecycle manager if available
+            if (matchLifecycleManager != null)
+            {
+                matchLifecycleManager.StartMatch();
+                return true;
+            }
+            
+            // Fallback to legacy implementation
+            return StartMatchLegacy();
+        }
+
+        private bool StartMatchLegacy()
         {
             if (NetworkManager.Singleton != null && !IsServer)
             {
@@ -483,7 +716,23 @@ namespace MOBA
             }
         }
         
+        /// <summary>
+        /// Adds points to the specified team's score during an active match.
+        /// DELEGATES to ServiceManager if available, falls back to legacy behavior.
+        /// </summary>
         public bool AddScore(int team, int points = 1)
+        {
+            // Delegate to service manager if available
+            if (serviceManager != null)
+            {
+                return serviceManager.AddTeamScore(team, points);
+            }
+            
+            // Fallback to legacy implementation
+            return AddScoreLegacy(team, points);
+        }
+
+        private bool AddScoreLegacy(int team, int points = 1)
         {
             if (NetworkManager.Singleton != null && !IsServer)
             {
@@ -512,7 +761,24 @@ namespace MOBA
             return false;
         }
         
-        void EndGame(int winningTeam = -1)
+        /// <summary>
+        /// Ends the current match and determines the winning team.
+        /// DELEGATES to MatchLifecycleManager if available, falls back to legacy behavior.
+        /// </summary>
+        public void EndGame(int winningTeam = -1)
+        {
+            // Delegate to match lifecycle manager if available
+            if (matchLifecycleManager != null)
+            {
+                matchLifecycleManager.EndMatch(winningTeam);
+                return;
+            }
+            
+            // Fallback to legacy implementation
+            EndGameLegacy(winningTeam);
+        }
+
+        private void EndGameLegacy(int winningTeam = -1)
         {
             if (NetworkManager.Singleton != null && !IsServer)
             {
@@ -530,7 +796,24 @@ namespace MOBA
             matchLifecycleService.StopMatch(winningTeam);
         }
         
+        /// <summary>
+        /// Restarts the current game.
+        /// DELEGATES to MatchLifecycleManager if available, falls back to legacy behavior.
+        /// </summary>
         public void RestartGame()
+        {
+            // Delegate to match lifecycle manager if available
+            if (matchLifecycleManager != null)
+            {
+                matchLifecycleManager.RestartMatch();
+                return;
+            }
+            
+            // Fallback to legacy implementation
+            RestartGameLegacy();
+        }
+
+        private void RestartGameLegacy()
         {
             if (NetworkManager.Singleton != null && !IsServer)
             {
@@ -543,22 +826,57 @@ namespace MOBA
                 UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
         }
         
+        /// <summary>
+        /// Checks if the game match is currently active.
+        /// DELEGATES to MatchLifecycleManager if available, falls back to legacy behavior.
+        /// </summary>
         public bool IsGameActive()
         {
+            // Delegate to match lifecycle manager if available
+            if (matchLifecycleManager != null)
+            {
+                return matchLifecycleManager.IsMatchActive;
+            }
+            
+            // Fallback to legacy implementation
             return matchLifecycleService?.IsActive ?? gameActive;
         }
         
+        /// <summary>
+        /// Gets the remaining time in the current match.
+        /// DELEGATES to MatchLifecycleManager if available, falls back to legacy behavior.
+        /// </summary>
         public float GetTimeRemaining()
         {
+            // Delegate to match lifecycle manager if available
+            if (matchLifecycleManager != null)
+            {
+                return matchLifecycleManager.TimeRemaining;
+            }
+            
+            // Fallback to legacy implementation
             return IsServer ? (matchLifecycleService?.TimeRemaining ?? 0f) : clientTimeRemaining;
         }
 
+        /// <summary>
+        /// Gets the current score for the specified team.
+        /// DELEGATES to ServiceManager if available, falls back to legacy behavior.
+        /// </summary>
         public int GetScore(int team)
         {
+            // Delegate to service manager if available
+            if (serviceManager != null)
+            {
+                return serviceManager.GetTeamScore(team);
+            }
+            
+            // Fallback to legacy implementation
             return scoringService?.GetScore(team) ?? 0;
         }
 
-        internal bool IsGameActiveServer => matchLifecycleService?.IsActive ?? false;
+        internal bool IsGameActiveServer => 
+            matchLifecycleManager?.IsMatchActive ?? 
+            (matchLifecycleService?.IsActive ?? false);
 
         internal void HandleServerPlayerJoined(ulong clientId)
         {
@@ -567,6 +885,14 @@ namespace MOBA
                 return;
             }
 
+            // Delegate to spawn manager if available
+            if (spawnManager != null)
+            {
+                spawnManager.SpawnPlayers();
+                return;
+            }
+            
+            // Fallback to legacy behavior
             SpawnPlayers();
         }
 
@@ -579,6 +905,10 @@ namespace MOBA
 
             // Currently no additional behavior beyond avatar despawn.
         }
+
+        #endregion
+
+        #region Legacy Network Event Handlers
 
         private void OnNetworkTimeChanged(float previous, float current)
         {
@@ -625,10 +955,23 @@ namespace MOBA
         public override void OnDestroy()
         {
             base.OnDestroy();
+            
+            // Clear singleton reference
             if (Instance == this)
             {
                 Instance = null;
             }
+
+            // Cleanup components
+            configurationManager?.Shutdown();
+            serviceManager?.Shutdown();
+            spawnManager?.Shutdown();
+            networkManager?.Shutdown();
+            uiManager?.Shutdown();
+            eventManager?.Shutdown();
+            matchLifecycleManager?.Shutdown();
+
+            // Cleanup legacy services
             if (scoringService != null)
             {
                 scoringService.ScoreChanged -= HandleScoreChanged;
@@ -637,9 +980,16 @@ namespace MOBA
             {
                 matchLifecycleService.MatchEnded -= HandleMatchEnded;
             }
+            
+            // Clear events
+            OnGameEnd = null;
+            OnScoreUpdate = null;
+
+            GameDebug.Log(BuildContext(GameDebugMechanicTag.Lifecycle),
+                "SimpleGameManager destroyed and cleaned up.");
         }
 
-        private void HandleScoreChanged(int team, int score)
+        public void HandleScoreChanged(int team, int score)
         {
             if (IsServer)
             {
@@ -657,7 +1007,7 @@ namespace MOBA
             UpdateUI();
         }
 
-        private void HandleMatchEnded(int winningTeam)
+        public void HandleMatchEnded(int winningTeam)
         {
             gameActive = false;
             clientTimeRemaining = matchLifecycleService?.TimeRemaining ?? clientTimeRemaining;
@@ -680,5 +1030,16 @@ namespace MOBA
             OnGameEnd?.Invoke(winningTeam);
             UpdateUI();
         }
+
+        /// <summary>
+        /// Get the match lifecycle service
+        /// </summary>
+        /// <returns>The match lifecycle service instance</returns>
+        public IMatchLifecycleService GetMatchLifecycleService()
+        {
+            return matchLifecycleService;
+        }
+
+        #endregion
     }
 }

@@ -5,17 +5,22 @@
         "MOBA.Runtime",
         "Unity.Netcode.Runtime",
         "Unity.Netcode.Runtime.Tests",
-        "Unity.InputSystem"
+        "Unity.InputSystem",
+        "UnityEngine.TestRunner"
     ],
     "includePlatforms": [],
     "excludePlatforms": [
         "Editor"
     ],
     "allowUnsafeCode": false,
-    "overrideReferences": false,
-    "precompiledReferences": [],
-    "autoReferenced": true,
-    "defineConstraints": [],
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
     "versionDefines": [],
     "noEngineReferences": false
 }

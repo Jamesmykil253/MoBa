@@ -73,6 +73,15 @@ namespace MOBA
         /// Converts legacy <see cref="SimpleAbility"/> assets into runtime <see cref="EnhancedAbility"/> instances.
         /// Call this after modifying the abilities array at runtime.
         /// </summary>
+        /// <remarks>
+        /// This method destroys existing runtime abilities and recreates them from the legacy definitions.
+        /// Legacy abilities are automatically assigned default values for new Enhanced system properties.
+        /// The conversion follows the Factory pattern to create enhanced ability instances.
+        /// Thread-safe operation that validates the enhanced system before proceeding.
+        /// </remarks>
+        /// <exception cref="System.InvalidOperationException">
+        /// Thrown when the enhanced system component cannot be found or created
+        /// </exception>
         public void SynchroniseAbilities()
         {
             EnsureEnhancedSystem();
@@ -131,30 +140,113 @@ namespace MOBA
 
         #region Legacy API Forwarders
 
+        /// <summary>
+        /// Attempts to cast the specified ability if it's available and off cooldown.
+        /// Delegates to the enhanced ability system for execution.
+        /// </summary>
+        /// <param name="abilityIndex">
+        /// Zero-based index of the ability to cast (0-3 for Primary/Ability1/Ability2/Ultimate)
+        /// </param>
+        /// <returns>
+        /// True if ability was successfully cast; false if on cooldown, insufficient resources,
+        /// invalid index, or enhanced system unavailable
+        /// </returns>
+        /// <exception cref="System.ArgumentOutOfRangeException">
+        /// Thrown when abilityIndex is less than 0 or greater than 3
+        /// </exception>
+        /// <remarks>
+        /// This method validates cooldown, mana cost, and target availability before casting.
+        /// Casting triggers animations, effects, and damage calculation through the enhanced system.
+        /// Use IsAbilityReady() to check availability before calling this method.
+        /// </remarks>
         public bool TryCastAbility(int abilityIndex)
         {
             EnsureEnhancedSystem();
             return enhancedSystem != null && enhancedSystem.TryCastAbility(abilityIndex);
         }
 
+        /// <summary>
+        /// Checks if the specified ability is ready to cast (off cooldown and sufficient resources).
+        /// Non-destructive query method that doesn't modify state.
+        /// </summary>
+        /// <param name="abilityIndex">
+        /// Zero-based index of the ability to check (0-3 for Primary/Ability1/Ability2/Ultimate)
+        /// </param>
+        /// <returns>
+        /// True if ability can be cast immediately; false if on cooldown, insufficient mana,
+        /// invalid index, or enhanced system unavailable
+        /// </returns>
+        /// <exception cref="System.ArgumentOutOfRangeException">
+        /// Thrown when abilityIndex is less than 0 or greater than 3
+        /// </exception>
+        /// <remarks>
+        /// Thread-safe method suitable for UI updates and input validation.
+        /// Check this before calling TryCastAbility() to provide responsive UI feedback.
+        /// Does not account for dynamic conditions like target availability.
+        /// </remarks>
         public bool IsAbilityReady(int abilityIndex)
         {
             EnsureEnhancedSystem();
             return enhancedSystem != null && enhancedSystem.IsAbilityReady(abilityIndex);
         }
 
+        /// <summary>
+        /// Gets the remaining cooldown time for the specified ability in seconds.
+        /// Used for UI countdown timers and ability availability checking.
+        /// </summary>
+        /// <param name="abilityIndex">
+        /// Zero-based index of the ability to query (0-3 for Primary/Ability1/Ability2/Ultimate)
+        /// </param>
+        /// <returns>
+        /// Remaining cooldown time in seconds; 0 if ability is ready to cast or invalid index
+        /// </returns>
+        /// <exception cref="System.ArgumentOutOfRangeException">
+        /// Thrown when abilityIndex is less than 0 or greater than 3
+        /// </exception>
+        /// <remarks>
+        /// Thread-safe method that provides precise cooldown timing for UI elements.
+        /// Updates every frame during cooldown period with sub-second precision.
+        /// Returns 0 for abilities that don't exist or are ready to cast.
+        /// Suitable for progress bars and countdown displays.
+        /// </remarks>
         public float GetCooldownRemaining(int abilityIndex)
         {
             EnsureEnhancedSystem();
             return enhancedSystem != null ? enhancedSystem.GetCooldownRemaining(abilityIndex) : 0f;
         }
 
+        /// <summary>
+        /// Enables or disables input processing for all abilities.
+        /// Used during cutscenes, death states, or other gameplay restrictions.
+        /// </summary>
+        /// <param name="enabled">
+        /// True to enable ability input processing; false to disable and ignore input
+        /// </param>
+        /// <remarks>
+        /// When disabled, all ability input is ignored but cooldowns continue to tick.
+        /// Useful for preventing ability usage during specific game states.
+        /// State is maintained until explicitly changed - not reset on scene load.
+        /// Thread-safe operation that immediately affects input responsiveness.
+        /// </remarks>
         public void SetInputEnabled(bool enabled)
         {
             EnsureEnhancedSystem();
             enhancedSystem?.SetInputEnabled(enabled);
         }
 
+        /// <summary>
+        /// Gets direct access to the underlying enhanced ability system component.
+        /// Provides access to advanced features not available through the legacy API.
+        /// </summary>
+        /// <returns>
+        /// Reference to the EnhancedAbilitySystem component; null if component missing
+        /// </returns>
+        /// <remarks>
+        /// Use this for advanced functionality like custom ability configuration,
+        /// event subscriptions, or direct access to enhanced features.
+        /// Prefer the legacy API methods for standard ability operations.
+        /// Ensures enhanced system exists before returning reference.
+        /// </remarks>
         public EnhancedAbilitySystem GetEnhancedSystem() => enhancedSystem;
 
         #endregion

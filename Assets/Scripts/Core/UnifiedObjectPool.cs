@@ -10,6 +10,93 @@ namespace MOBA
     /// Unified Object Pool system that consolidates all pool implementations
     /// Supports both regular GameObjects and NetworkObjects with Components
     /// Replaces: ObjectPool<T>, GameObjectPool, NetworkObjectPool, and all pool managers
+    /// 
+    /// <example>
+    /// <para><strong>Basic Component Pool Usage:</strong></para>
+    /// <code>
+    /// // Create a pool for projectile components
+    /// var projectilePool = UnifiedObjectPool.GetComponentPool&lt;Projectile&gt;(
+    ///     "ProjectilePool", projectilePrefab, initialSize: 20, maxSize: 100);
+    /// 
+    /// // Get a projectile from the pool
+    /// var projectile = projectilePool.Get();
+    /// if (projectile != null)
+    /// {
+    ///     projectile.Initialize(startPos, targetPos, damage);
+    ///     // ... use the projectile ...
+    ///     
+    ///     // Return to pool when done
+    ///     projectilePool.Return(projectile);
+    /// }
+    /// </code>
+    /// 
+    /// <para><strong>GameObject Pool for Effects:</strong></para>
+    /// <code>
+    /// // Create pool for visual effects
+    /// var effectPool = UnifiedObjectPool.GetGameObjectPool(
+    ///     "ExplosionEffects", explosionPrefab, initialSize: 10, maxSize: 50);
+    /// 
+    /// // Spawn effect at impact location
+    /// var effect = effectPool.Get();
+    /// if (effect != null)
+    /// {
+    ///     effect.transform.position = impactPoint;
+    ///     effect.transform.rotation = impactRotation;
+    ///     
+    ///     // Auto-return after 3 seconds
+    ///     StartCoroutine(ReturnAfterDelay(effect, 3f));
+    /// }
+    /// 
+    /// IEnumerator ReturnAfterDelay(GameObject obj, float delay)
+    /// {
+    ///     yield return new WaitForSeconds(delay);
+    ///     effectPool.Return(obj);
+    /// }
+    /// </code>
+    /// 
+    /// <para><strong>NetworkObject Pool for Multiplayer:</strong></para>
+    /// <code>
+    /// // Create network-aware pool (server only)
+    /// if (NetworkManager.Singleton.IsServer)
+    /// {
+    ///     var networkPool = UnifiedObjectPool.GetNetworkObjectPool(
+    ///         "NetworkEnemies", enemyNetworkPrefab, initialSize: 5, maxSize: 20);
+    ///     
+    ///     // Spawn networked enemy
+    ///     var enemy = networkPool.Get(); // Automatically spawns on network
+    ///     if (enemy != null)
+    ///     {
+    ///         enemy.transform.position = spawnPoint;
+    ///         // Enemy is now visible to all clients
+    ///     }
+    ///     
+    ///     // Despawn when defeated
+    ///     networkPool.Return(enemy); // Automatically despawns from network
+    /// }
+    /// </code>
+    /// 
+    /// <para><strong>Pool Management and Statistics:</strong></para>
+    /// <code>
+    /// // Monitor pool performance
+    /// var stats = UnifiedObjectPool.GetAllPoolStats();
+    /// foreach (var kvp in stats)
+    /// {
+    ///     Debug.Log($"Pool {kvp.Key}: {kvp.Value.available} available, " +
+    ///               $"{kvp.Value.active} active, {kvp.Value.total} total");
+    /// }
+    /// 
+    /// // Clear specific pool when done
+    /// UnifiedObjectPool.ClearPool("ProjectilePool");
+    /// 
+    /// // Clear all pools on scene change
+    /// UnifiedObjectPool.ClearAllPools();
+    /// </code>
+    /// </example>
+    /// 
+    /// <para><strong>Design Pattern:</strong> Object Pool (Creational)</para>
+    /// <para><strong>Thread Safety:</strong> All operations are thread-safe using ConcurrentDictionary and locking</para>
+    /// <para><strong>Memory Management:</strong> Pools automatically manage object lifecycle and prevent memory leaks</para>
+    /// <para><strong>Network Aware:</strong> NetworkObject pools handle spawning/despawning automatically</para>
     /// </summary>
     public static class UnifiedObjectPool
     {

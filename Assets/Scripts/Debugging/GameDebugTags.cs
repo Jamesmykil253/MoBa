@@ -60,6 +60,9 @@ namespace MOBA.Debugging
         AbilityUse,
         Score,
         Jump,
-        AntiCheat
+        AntiCheat,
+        UI,
+        Events,
+        MatchLifecycle
     }
 }
