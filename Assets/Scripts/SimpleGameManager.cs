@@ -99,6 +99,7 @@ namespace MOBA
             matchLifecycleService.Configure(gameTime, scoreToWin);
             matchLifecycleService.MatchEnded += HandleMatchEnded;
             clientTimeRemaining = matchLifecycleService.TimeRemaining;
+            gameActive = matchLifecycleService.IsActive;
             UpdateUI();
         }
         [Header("Game Settings")]
@@ -231,24 +232,30 @@ namespace MOBA
                 return false;
             }
 
-            if (gameActive)
+            if (matchLifecycleService != null && matchLifecycleService.IsActive)
             {
                 GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Lifecycle),
                     "StartMatch called while game is already active.");
                 return false;
             }
 
-            currentTime = gameTime;
+            matchLifecycleService?.Configure(gameTime, scoreToWin);
+            if (matchLifecycleService == null || !matchLifecycleService.StartMatch())
+            {
+                GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Lifecycle),
+                    "Match lifecycle service rejected StartMatch call.");
+                return false;
+            }
+
             gameActive = true;
-            scoringService?.ResetScores();
-            networkTimeRemaining.Value = currentTime;
+            clientTimeRemaining = matchLifecycleService.TimeRemaining;
+            networkTimeRemaining.Value = clientTimeRemaining;
             networkGameActive.Value = true;
             networkWinningTeam.Value = -1;
 
             if (!ValidateSpawnsAndPrefabs())
             {
-                gameActive = false;
-                networkGameActive.Value = false;
+                matchLifecycleService.StopMatch(-1);
                 return false;
             }
 
@@ -458,17 +465,6 @@ namespace MOBA
             }
         }
         
-        void UpdateGameTime()
-        {
-            currentTime -= Time.deltaTime;
-            networkTimeRemaining.Value = Mathf.Max(0f, currentTime);
-            if (currentTime <= 0)
-            {
-                currentTime = 0;
-                EndGame();
-            }
-        }
-        
         void UpdateUI()
         {
             if (timeText != null)
@@ -495,7 +491,7 @@ namespace MOBA
                     "AddScore called on client; ignoring.");
                 return false;
             }
-            if (!gameActive)
+            if (!(matchLifecycleService?.IsActive ?? gameActive))
             {
                 GameDebug.LogWarning(BuildContext(GameDebugMechanicTag.Score),
                     "Attempted to add score after match ended.");
@@ -549,7 +545,7 @@ namespace MOBA
         
         public bool IsGameActive()
         {
-            return gameActive;
+            return matchLifecycleService?.IsActive ?? gameActive;
         }
         
         public float GetTimeRemaining()
@@ -586,7 +582,7 @@ namespace MOBA
 
         private void OnNetworkTimeChanged(float previous, float current)
         {
-            currentTime = current;
+            clientTimeRemaining = current;
             UpdateUI();
         }
 
@@ -637,6 +633,10 @@ namespace MOBA
             {
                 scoringService.ScoreChanged -= HandleScoreChanged;
             }
+            if (matchLifecycleService != null)
+            {
+                matchLifecycleService.MatchEnded -= HandleMatchEnded;
+            }
         }
 
         private void HandleScoreChanged(int team, int score)
@@ -654,6 +654,30 @@ namespace MOBA
             }
 
             OnScoreUpdate?.Invoke(team, score);
+            UpdateUI();
+        }
+
+        private void HandleMatchEnded(int winningTeam)
+        {
+            gameActive = false;
+            clientTimeRemaining = matchLifecycleService?.TimeRemaining ?? clientTimeRemaining;
+            networkWinningTeam.Value = winningTeam;
+            networkTimeRemaining.Value = clientTimeRemaining;
+            networkGameActive.Value = false;
+
+            if (winningTeam >= 0)
+            {
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Score),
+                    "Team won the match.",
+                    ("TeamIndex", winningTeam),
+                    ("Score", scoringService?.GetScore(winningTeam) ?? 0));
+            }
+            else
+            {
+                GameDebug.Log(BuildContext(GameDebugMechanicTag.Lifecycle), "Match ended due to time limit.");
+            }
+
+            OnGameEnd?.Invoke(winningTeam);
             UpdateUI();
         }
     }
