@@ -1,0 +1,804 @@
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.InputSystem;
+using System.Collections.Generic;
+
+namespace MOBA.UI
+{
+    /// <summary>
+    /// Radial ping menu for quick communication in MOBA games
+    /// Provides context-sensitive ping options with smooth animations
+    /// Reference: UI/UX Design Patterns for Games, Unity UI Best Practices
+    /// </summary>
+    public class PingRadialMenu : MonoBehaviour
+    {
+        #region Configuration
+        
+        [Header("Menu Configuration")]
+        [SerializeField, Tooltip("Radial menu container")]
+        private RectTransform menuContainer;
+        
+        [SerializeField, Tooltip("Menu background")]
+        private Image menuBackground;
+        
+        [SerializeField, Tooltip("Center indicator")]
+        private Image centerIndicator;
+        
+        [SerializeField, Tooltip("Ping option prefab")]
+        private GameObject pingOptionPrefab;
+        
+        [SerializeField, Tooltip("Input action for ping menu")]
+        private InputActionReference pingMenuAction;
+        
+        [Header("Visual Settings")]
+        [SerializeField, Tooltip("Menu radius")]
+        private float menuRadius = 100f;
+        
+        [SerializeField, Tooltip("Option icon size")]
+        private float optionIconSize = 40f;
+        
+        [SerializeField, Tooltip("Animation duration")]
+        private float animationDuration = 0.2f;
+        
+        [SerializeField, Tooltip("Scale animation curve")]
+        private AnimationCurve scaleAnimationCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
+        
+        [Header("Colors")]
+        [SerializeField, Color] private Color normalColor = Color.white;
+        [SerializeField, Color] private Color hoverColor = Color.yellow;
+        [SerializeField, Color] private Color selectedColor = Color.green;
+        [SerializeField, Color] private Color backgroundColorActive = new Color(0, 0, 0, 0.7f);
+        [SerializeField, Color] private Color backgroundColorInactive = new Color(0, 0, 0, 0f);
+        
+        #endregion
+        
+        #region Ping Definitions
+        
+        /// <summary>
+        /// Ping type definitions
+        /// </summary>
+        public enum PingType
+        {
+            None,
+            Caution,        // "Be careful here"
+            EnemyMissing,   // "Enemy missing"
+            AssistMe,       // "Help me"
+            OnMyWay,        // "I'm coming"
+            Retreat,        // "Fall back"
+            Attack,         // "Attack this"
+            Defend,         // "Defend this"
+            Ward           // "We need vision here"
+        }
+        
+        /// <summary>
+        /// Ping option data
+        /// </summary>
+        [System.Serializable]
+        public class PingOption
+        {
+            public PingType pingType;
+            public string displayText;
+            public Sprite icon;
+            public Color pingColor;
+            public string soundEffect;
+            public float cooldown;
+            
+            public PingOption(PingType type, string text, Sprite iconSprite, Color color, string sound = "", float cd = 2f)
+            {
+                pingType = type;
+                displayText = text;
+                icon = iconSprite;
+                pingColor = color;
+                soundEffect = sound;
+                cooldown = cd;
+            }
+        }
+        
+        /// <summary>
+        /// Runtime ping option component
+        /// </summary>
+        public class PingOptionUI : MonoBehaviour
+        {
+            [Header("Components")]
+            public Image iconImage;
+            public Image backgroundImage;
+            public Text labelText;
+            public Button button;
+            
+            [Header("State")]
+            public PingOption optionData;
+            public int optionIndex;
+            public bool isHovered;
+            public bool isSelected;
+            
+            private Vector3 originalScale;
+            private Color originalColor;
+            
+            public void Initialize(PingOption data, int index, System.Action<int> onSelected)
+            {
+                optionData = data;
+                optionIndex = index;
+                
+                // Set up visual components
+                if (iconImage != null && data.icon != null)
+                {
+                    iconImage.sprite = data.icon;
+                    iconImage.color = data.pingColor;
+                }
+                
+                if (labelText != null)
+                {
+                    labelText.text = data.displayText;
+                }
+                
+                if (button != null)
+                {
+                    button.onClick.AddListener(() => onSelected(index));
+                }
+                
+                // Store original values
+                originalScale = transform.localScale;
+                originalColor = iconImage != null ? iconImage.color : Color.white;
+                
+                // Set up hover effects
+                SetupHoverEffects();
+            }
+            
+            private void SetupHoverEffects()
+            {
+                var eventTrigger = gameObject.GetComponent<UnityEngine.EventSystems.EventTrigger>();
+                if (eventTrigger == null)
+                {
+                    eventTrigger = gameObject.AddComponent<UnityEngine.EventSystems.EventTrigger>();
+                }
+                
+                // Mouse enter
+                var pointerEnter = new UnityEngine.EventSystems.EventTrigger.Entry();
+                pointerEnter.eventID = UnityEngine.EventSystems.EventTriggerType.PointerEnter;
+                pointerEnter.callback.AddListener((data) => OnHoverStart());
+                eventTrigger.triggers.Add(pointerEnter);
+                
+                // Mouse exit
+                var pointerExit = new UnityEngine.EventSystems.EventTrigger.Entry();
+                pointerExit.eventID = UnityEngine.EventSystems.EventTriggerType.PointerExit;
+                pointerExit.callback.AddListener((data) => OnHoverEnd());
+                eventTrigger.triggers.Add(pointerExit);
+            }
+            
+            public void OnHoverStart()
+            {
+                isHovered = true;
+                
+                // Scale animation
+                transform.DOScale(originalScale * 1.2f, 0.1f)
+                    .SetEase(Ease.OutBack);
+                
+                // Color animation
+                if (iconImage != null)
+                {
+                    iconImage.DOColor(Color.white, 0.1f);
+                }
+                
+                // Background glow
+                if (backgroundImage != null)
+                {
+                    backgroundImage.DOColor(new Color(1, 1, 1, 0.3f), 0.1f);
+                }
+            }
+            
+            public void OnHoverEnd()
+            {
+                if (isSelected) return;
+                
+                isHovered = false;
+                
+                // Reset scale
+                transform.DOScale(originalScale, 0.1f)
+                    .SetEase(Ease.OutQuad);
+                
+                // Reset color
+                if (iconImage != null)
+                {
+                    iconImage.DOColor(originalColor, 0.1f);
+                }
+                
+                // Reset background
+                if (backgroundImage != null)
+                {
+                    backgroundImage.DOColor(Color.clear, 0.1f);
+                }
+            }
+            
+            public void SetSelected(bool selected)
+            {
+                isSelected = selected;
+                
+                if (selected)
+                {
+                    // Selection feedback
+                    transform.DOPunchScale(Vector3.one * 0.1f, 0.2f, 5, 0.5f);
+                    
+                    if (iconImage != null)
+                    {
+                        iconImage.DOColor(Color.green, 0.1f);
+                    }
+                }
+                else
+                {
+                    OnHoverEnd();
+                }
+            }
+        }
+        
+        #endregion
+        
+        #region State Data
+        
+        private List<PingOption> availablePings = new List<PingOption>();
+        private List<PingOptionUI> pingOptionUIs = new List<PingOptionUI>();
+        private Dictionary<PingType, float> pingCooldowns = new Dictionary<PingType, float>();
+        
+        private bool isMenuActive = false;
+        private int selectedOptionIndex = -1;
+        private Vector2 menuPosition;
+        private Camera uiCamera;
+        
+        // Input tracking
+        private Vector2 initialInputPosition;
+        private Vector2 currentInputPosition;
+        private bool isDragging = false;
+        private float dragThreshold = 10f;
+        
+        // Animation state
+        private Sequence menuAnimationSequence;
+        
+        #endregion
+        
+        #region Events
+        
+        /// <summary>
+        /// Event fired when a ping is selected
+        /// </summary>
+        public System.Action<PingType, Vector3> OnPingSelected;
+        
+        /// <summary>
+        /// Event fired when menu opens/closes
+        /// </summary>
+        public System.Action<bool> OnMenuToggled;
+        
+        #endregion
+        
+        #region Unity Lifecycle
+        
+        private void Awake()
+        {
+            // Get UI camera
+            uiCamera = GetComponentInParent<Canvas>().worldCamera;
+            if (uiCamera == null)
+            {
+                uiCamera = Camera.main;
+            }
+            
+            // Initialize ping options
+            InitializePingOptions();
+            
+            // Set initial state
+            menuContainer.gameObject.SetActive(false);
+            menuContainer.localScale = Vector3.zero;
+        }
+        
+        private void OnEnable()
+        {
+            if (pingMenuAction != null)
+            {
+                pingMenuAction.action.performed += OnPingMenuInput;
+                pingMenuAction.action.canceled += OnPingMenuReleased;
+                pingMenuAction.action.Enable();
+            }
+        }
+        
+        private void OnDisable()
+        {
+            if (pingMenuAction != null)
+            {
+                pingMenuAction.action.performed -= OnPingMenuInput;
+                pingMenuAction.action.canceled -= OnPingMenuReleased;
+                pingMenuAction.action.Disable();
+            }
+        }
+        
+        private void Update()
+        {
+            if (isMenuActive)
+            {
+                UpdateInputTracking();
+                UpdateCooldowns();
+            }
+        }
+        
+        #endregion
+        
+        #region Initialization
+        
+        /// <summary>
+        /// Initialize available ping options
+        /// </summary>
+        private void InitializePingOptions()
+        {
+            // Load ping icons (these would be actual sprite assets)
+            availablePings.Add(new PingOption(PingType.Caution, "Caution", null, Color.yellow, "ping_caution"));
+            availablePings.Add(new PingOption(PingType.EnemyMissing, "Missing", null, Color.red, "ping_missing"));
+            availablePings.Add(new PingOption(PingType.AssistMe, "Help", null, Color.blue, "ping_help"));
+            availablePings.Add(new PingOption(PingType.OnMyWay, "Coming", null, Color.green, "ping_coming"));
+            availablePings.Add(new PingOption(PingType.Retreat, "Retreat", null, Color.orange, "ping_retreat"));
+            availablePings.Add(new PingOption(PingType.Attack, "Attack", null, Color.red, "ping_attack"));
+            availablePings.Add(new PingOption(PingType.Defend, "Defend", null, Color.blue, "ping_defend"));
+            availablePings.Add(new PingOption(PingType.Ward, "Ward", null, Color.magenta, "ping_ward"));
+            
+            // Initialize cooldowns
+            foreach (var ping in availablePings)
+            {
+                pingCooldowns[ping.pingType] = 0f;
+            }
+            
+            CreatePingOptionUIs();
+        }
+        
+        /// <summary>
+        /// Create UI elements for ping options
+        /// </summary>
+        private void CreatePingOptionUIs()
+        {
+            if (pingOptionPrefab == null)
+            {
+                Debug.LogError("[PingRadialMenu] Ping option prefab is not assigned!");
+                return;
+            }
+            
+            for (int i = 0; i < availablePings.Count; i++)
+            {
+                var optionGO = Instantiate(pingOptionPrefab, menuContainer);
+                var optionUI = optionGO.GetComponent<PingOptionUI>();
+                
+                if (optionUI == null)
+                {
+                    optionUI = optionGO.AddComponent<PingOptionUI>();
+                    
+                    // Set up components if not already present
+                    optionUI.iconImage = optionGO.GetComponent<Image>();
+                    optionUI.backgroundImage = optionGO.transform.GetChild(0)?.GetComponent<Image>();
+                    optionUI.labelText = optionGO.GetComponentInChildren<Text>();
+                    optionUI.button = optionGO.GetComponent<Button>();
+                    
+                    if (optionUI.button == null)
+                    {
+                        optionUI.button = optionGO.AddComponent<Button>();
+                    }
+                }
+                
+                // Initialize option
+                optionUI.Initialize(availablePings[i], i, OnPingOptionSelected);
+                
+                // Position around circle
+                float angle = (360f / availablePings.Count) * i;
+                Vector3 position = new Vector3(
+                    Mathf.Cos(angle * Mathf.Deg2Rad) * menuRadius,
+                    Mathf.Sin(angle * Mathf.Deg2Rad) * menuRadius,
+                    0
+                );
+                optionUI.transform.localPosition = position;
+                
+                // Set size
+                optionUI.GetComponent<RectTransform>().sizeDelta = Vector2.one * optionIconSize;
+                
+                pingOptionUIs.Add(optionUI);
+            }
+        }
+        
+        #endregion
+        
+        #region Input Handling
+        
+        /// <summary>
+        /// Handle ping menu input
+        /// </summary>
+        private void OnPingMenuInput(InputAction.CallbackContext context)
+        {
+            if (!isMenuActive)
+            {
+                ShowMenu();
+            }
+        }
+        
+        /// <summary>
+        /// Handle ping menu release
+        /// </summary>
+        private void OnPingMenuReleased(InputAction.CallbackContext context)
+        {
+            if (isMenuActive)
+            {
+                ConfirmSelection();
+                HideMenu();
+            }
+        }
+        
+        /// <summary>
+        /// Update input tracking for radial selection
+        /// </summary>
+        private void UpdateInputTracking()
+        {
+            // Get current input position
+            Vector2 inputPos = Mouse.current?.position.ReadValue() ?? Vector2.zero;
+            
+            if (!isDragging)
+            {
+                initialInputPosition = inputPos;
+                isDragging = true;
+            }
+            
+            currentInputPosition = inputPos;
+            
+            // Calculate drag distance
+            float dragDistance = Vector2.Distance(initialInputPosition, currentInputPosition);
+            
+            if (dragDistance > dragThreshold)
+            {
+                // Calculate angle from center to input position
+                Vector2 centerScreen = RectTransformUtility.WorldToScreenPoint(uiCamera, menuContainer.position);
+                Vector2 direction = (currentInputPosition - centerScreen).normalized;
+                
+                // Find closest ping option
+                int closestIndex = FindClosestPingOption(direction);
+                SelectOption(closestIndex);
+            }
+            else
+            {
+                // Clear selection if within center threshold
+                SelectOption(-1);
+            }
+        }
+        
+        /// <summary>
+        /// Find closest ping option to input direction
+        /// </summary>
+        private int FindClosestPingOption(Vector2 direction)
+        {
+            float inputAngle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
+            if (inputAngle < 0) inputAngle += 360f;
+            
+            int closestIndex = -1;
+            float closestDistance = float.MaxValue;
+            
+            for (int i = 0; i < pingOptionUIs.Count; i++)
+            {
+                float optionAngle = (360f / pingOptionUIs.Count) * i;
+                float angleDifference = Mathf.Abs(Mathf.DeltaAngle(inputAngle, optionAngle));
+                
+                if (angleDifference < closestDistance)
+                {
+                    closestDistance = angleDifference;
+                    closestIndex = i;
+                }
+            }
+            
+            return closestIndex;
+        }
+        
+        #endregion
+        
+        #region Menu Management
+        
+        /// <summary>
+        /// Show the ping menu
+        /// </summary>
+        public void ShowMenu()
+        {
+            if (isMenuActive) return;
+            
+            isMenuActive = true;
+            selectedOptionIndex = -1;
+            isDragging = false;
+            
+            // Get world position for ping
+            Vector3 worldPos = GetWorldPositionFromInput();
+            menuPosition = worldPos;
+            
+            // Activate menu
+            menuContainer.gameObject.SetActive(true);
+            
+            // Animate menu appearance
+            AnimateMenuShow();
+            
+            // Update visual state
+            UpdateMenuVisuals();
+            
+            OnMenuToggled?.Invoke(true);
+            
+            Debug.Log("[PingRadialMenu] Menu shown");
+        }
+        
+        /// <summary>
+        /// Hide the ping menu
+        /// </summary>
+        public void HideMenu()
+        {
+            if (!isMenuActive) return;
+            
+            isMenuActive = false;
+            
+            // Animate menu disappearance
+            AnimateMenuHide();
+            
+            OnMenuToggled?.Invoke(false);
+            
+            Debug.Log("[PingRadialMenu] Menu hidden");
+        }
+        
+        /// <summary>
+        /// Get world position from current input
+        /// </summary>
+        private Vector3 GetWorldPositionFromInput()
+        {
+            Vector2 screenPos = Mouse.current?.position.ReadValue() ?? Vector2.zero;
+            
+            // Raycast to get world position
+            var ray = uiCamera.ScreenPointToRay(screenPos);
+            if (Physics.Raycast(ray, out RaycastHit hit))
+            {
+                return hit.point;
+            }
+            
+            // Fallback to ground plane
+            float distance = Vector3.Dot(Vector3.up, ray.direction);
+            if (Mathf.Abs(distance) > 0.001f)
+            {
+                float enter = Vector3.Dot(Vector3.up, -ray.origin) / distance;
+                return ray.origin + ray.direction * enter;
+            }
+            
+            return Vector3.zero;
+        }
+        
+        #endregion
+        
+        #region Animation
+        
+        /// <summary>
+        /// Animate menu showing
+        /// </summary>
+        private void AnimateMenuShow()
+        {
+            // Kill existing animation
+            menuAnimationSequence?.Kill();
+            
+            // Create new animation sequence
+            menuAnimationSequence = DOTween.Sequence();
+            
+            // Background fade in
+            if (menuBackground != null)
+            {
+                menuBackground.color = backgroundColorInactive;
+                menuAnimationSequence.Join(menuBackground.DOColor(backgroundColorActive, animationDuration));
+            }
+            
+            // Container scale up
+            menuContainer.localScale = Vector3.zero;
+            menuAnimationSequence.Join(menuContainer.DOScale(Vector3.one, animationDuration)
+                .SetEase(scaleAnimationCurve));
+            
+            // Animate ping options
+            for (int i = 0; i < pingOptionUIs.Count; i++)
+            {
+                var option = pingOptionUIs[i];
+                option.transform.localScale = Vector3.zero;
+                
+                // Stagger the animations
+                float delay = i * 0.02f;
+                menuAnimationSequence.Join(option.transform.DOScale(Vector3.one, animationDuration * 0.8f)
+                    .SetDelay(delay)
+                    .SetEase(Ease.OutBack));
+            }
+            
+            menuAnimationSequence.Play();
+        }
+        
+        /// <summary>
+        /// Animate menu hiding
+        /// </summary>
+        private void AnimateMenuHide()
+        {
+            // Kill existing animation
+            menuAnimationSequence?.Kill();
+            
+            // Create hide animation
+            menuAnimationSequence = DOTween.Sequence();
+            
+            // Background fade out
+            if (menuBackground != null)
+            {
+                menuAnimationSequence.Join(menuBackground.DOColor(backgroundColorInactive, animationDuration * 0.5f));
+            }
+            
+            // Container scale down
+            menuAnimationSequence.Join(menuContainer.DOScale(Vector3.zero, animationDuration * 0.5f)
+                .SetEase(Ease.InBack));
+            
+            // Deactivate after animation
+            menuAnimationSequence.OnComplete(() => {
+                menuContainer.gameObject.SetActive(false);
+            });
+            
+            menuAnimationSequence.Play();
+        }
+        
+        #endregion
+        
+        #region Selection Management
+        
+        /// <summary>
+        /// Select ping option by index
+        /// </summary>
+        private void SelectOption(int index)
+        {
+            if (selectedOptionIndex == index) return;
+            
+            // Deselect previous option
+            if (selectedOptionIndex >= 0 && selectedOptionIndex < pingOptionUIs.Count)
+            {
+                pingOptionUIs[selectedOptionIndex].SetSelected(false);
+            }
+            
+            selectedOptionIndex = index;
+            
+            // Select new option
+            if (selectedOptionIndex >= 0 && selectedOptionIndex < pingOptionUIs.Count)
+            {
+                pingOptionUIs[selectedOptionIndex].SetSelected(true);
+                
+                // Haptic feedback (if available)
+                // Gamepad.current?.SetMotorSpeeds(0.1f, 0.1f);
+            }
+        }
+        
+        /// <summary>
+        /// Handle ping option selection
+        /// </summary>
+        private void OnPingOptionSelected(int index)
+        {
+            if (index < 0 || index >= availablePings.Count) return;
+            
+            var pingOption = availablePings[index];
+            
+            // Check cooldown
+            if (IsOnCooldown(pingOption.pingType))
+            {
+                Debug.Log($"[PingRadialMenu] Ping {pingOption.pingType} is on cooldown");
+                return;
+            }
+            
+            // Execute ping
+            ExecutePing(pingOption);
+        }
+        
+        /// <summary>
+        /// Confirm current selection
+        /// </summary>
+        private void ConfirmSelection()
+        {
+            if (selectedOptionIndex >= 0 && selectedOptionIndex < availablePings.Count)
+            {
+                OnPingOptionSelected(selectedOptionIndex);
+            }
+        }
+        
+        #endregion
+        
+        #region Ping Execution
+        
+        /// <summary>
+        /// Execute a ping
+        /// </summary>
+        private void ExecutePing(PingOption pingOption)
+        {
+            // Set cooldown
+            pingCooldowns[pingOption.pingType] = Time.time + pingOption.cooldown;
+            
+            // Play sound effect
+            if (!string.IsNullOrEmpty(pingOption.soundEffect))
+            {
+                // AudioManager.Instance?.PlaySFX(pingOption.soundEffect);
+            }
+            
+            // Fire event
+            OnPingSelected?.Invoke(pingOption.pingType, menuPosition);
+            
+            Debug.Log($"[PingRadialMenu] Executed ping: {pingOption.pingType} at {menuPosition}");
+        }
+        
+        /// <summary>
+        /// Check if ping type is on cooldown
+        /// </summary>
+        private bool IsOnCooldown(PingType pingType)
+        {
+            return pingCooldowns.ContainsKey(pingType) && Time.time < pingCooldowns[pingType];
+        }
+        
+        /// <summary>
+        /// Update cooldown timers
+        /// </summary>
+        private void UpdateCooldowns()
+        {
+            // Update visual cooldown indicators (if implemented)
+            for (int i = 0; i < pingOptionUIs.Count; i++)
+            {
+                var option = pingOptionUIs[i];
+                var pingType = availablePings[i].pingType;
+                
+                if (IsOnCooldown(pingType))
+                {
+                    // Could add visual cooldown indication here
+                    // option.SetCooldownProgress(GetCooldownProgress(pingType));
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Update menu visual state
+        /// </summary>
+        private void UpdateMenuVisuals()
+        {
+            // Update option availability based on context
+            // This could be expanded to show/hide options based on game state
+            for (int i = 0; i < pingOptionUIs.Count; i++)
+            {
+                var option = pingOptionUIs[i];
+                var pingData = availablePings[i];
+                
+                // Fade out options on cooldown
+                bool onCooldown = IsOnCooldown(pingData.pingType);
+                float alpha = onCooldown ? 0.5f : 1.0f;
+                
+                if (option.iconImage != null)
+                {
+                    var color = option.iconImage.color;
+                    color.a = alpha;
+                    option.iconImage.color = color;
+                }
+            }
+        }
+        
+        #endregion
+        
+        #region Public Interface
+        
+        /// <summary>
+        /// Force close the menu
+        /// </summary>
+        public void ForceCloseMenu()
+        {
+            if (isMenuActive)
+            {
+                HideMenu();
+            }
+        }
+        
+        /// <summary>
+        /// Check if menu is currently active
+        /// </summary>
+        public bool IsMenuActive => isMenuActive;
+        
+        /// <summary>
+        /// Get current selected ping type
+        /// </summary>
+        public PingType GetSelectedPingType()
+        {
+            if (selectedOptionIndex >= 0 && selectedOptionIndex < availablePings.Count)
+            {
+                return availablePings[selectedOptionIndex].pingType;
+            }
+            return PingType.None;
+        }
+        
+        #endregion
+    }
+}

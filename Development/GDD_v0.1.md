@@ -1,5 +1,65 @@
 # MOBA Game Design Document (GDD) v0.1
 
+## Input & Control System
+
+### Core Control Philosophy
+* **Responsive Input Architecture** – Built on Unity's Input System with dual support for legacy input fallback
+* **Smart Attack Targeting** – Two distinct attack modes for tactical flexibility:
+  - **Primary Attack (LMB)**: Prioritizes enemy players → NPCs → no attack if nothing in range
+  - **NPC Attack (RMB)**: Prioritizes NPCs → enemy players → no attack if nothing in range
+* **Attack Rate Limiting** – Both attack types respect character attack speed and cannot exceed maximum rate
+* **Input Buffering** – 0.1-second buffer window ensures responsive ability casting during high-action sequences
+
+### Ability System & Controls
+* **Three Active Abilities** per character:
+  - **Ability 1 (Q)**: First basic ability
+  - **Ability 2 (E)**: Second basic ability  
+  - **Ultimate (G)**: Character's signature special ability
+* **Ability Evolution System** – Pokemon Unite-style upgrade paths:
+  - **Path A Selection (1 key)**: Choose first upgrade branch when leveling
+  - **Path B Selection (2 key)**: Choose second upgrade branch when leveling
+  - **Build Diversity**: Mix-and-match paths across abilities for strategic customization
+
+### Movement & Navigation
+* **WASD Movement** – Full 3D character movement with mouse aim direction
+* **Jump System**:
+  - **Tap Jump (Space)**: Quick single jump
+  - **Hold Jump (Space)**: Variable height jump based on hold duration
+  - **Jump Physics**: Deterministic state machine governs grounded ↔ airborne transitions
+* **Home Function (Ctrl)**: Hold for 1.5 seconds to return to base/respawn point
+
+### Communication System
+* **Ping Wheel** – Quick team communication without text chat:
+  - **Predefined Callouts**: "Help!", "Retreat!", "Push!", "Missing Enemy!", "On My Way!"
+  - **Tactical Coordination**: Essential for team strategy without voice chat
+  - **Implementation Status**: Code framework complete, UI system pending
+
+### Utility Actions
+* **Item Use (C)**: Activate consumable items and power-ups
+* **Interact/Score (Alt)**: Deposit collected orbs at scoring zones
+* **Aim System**: Mouse controls aim direction for abilities and manual targeting
+
+## Control Schemes & Accessibility
+
+### PC Controls (Primary)
+All controls optimized for keyboard + mouse with full customization support
+
+### Mobile Controls (Adaptive)
+* **Virtual Joystick**: Movement control
+* **Touch Buttons**: Abilities and actions
+* **Gesture Support**: Swipe for camera control
+* **Auto-aim Assistance**: Enhanced targeting for touch controls
+
+### Gamepad Support
+* **Full Controller Mapping**: All actions accessible via gamepad
+* **Analog Movement**: Smooth character control with sticks
+* **Button Combinations**: Efficient ability access on limited buttons
+
+### XR/VR Ready
+* **3D Spatial Controls**: Position and rotation tracking
+* **Hand Tracking**: Direct ability casting and interaction
+* **Immersive Targeting**: Natural aiming mechanics
+
 ## Design Pillars
 
 * **Vertical Movement & Traversal** – The core novelty of this MOBA is its emphasis on vertical play.  Lanes run north to south with multiple levels connected by jump pads and climbable surfaces.  Players must time their jumps, double jumps and knockback recoils to control high ground and drop on enemies.  A deterministic state machine governs actions like idling, walking, running and jumping; characters can only move to certain states from their current state【804165595389957†L82-L94】.

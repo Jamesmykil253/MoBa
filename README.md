@@ -43,11 +43,11 @@ Collect crypto coins by defeating enemies and NPCs, then deposit them at your te
 ### 🏃‍♂️ **Movement & Combat**
 1. **Move** with WASD (PC) or virtual joystick (mobile)
 2. **Jump** and **double-jump** to reach high platforms and dodge attacks
-3. **Attack** enemies with auto-targeting basic attacks
-4. **Use abilities** (Q, E, R) with manual aim for bonus damage
+3. **Attack** enemies with smart targeting (left-click for players, right-click for NPCs)
+4. **Use abilities** (Q, E, G) with manual aim for strategic advantage
 5. **Collect coins** that drop from defeated enemies
 6. **Deposit coins** at scoring zones using the Interact button
-7. **One input path per ability:** The enhanced ability system now auto-disables its internal bindings when a legacy `SimpleInputHandler` is present, ensuring exactly one listener handles casts—mirroring AAA input hygiene from *Game Programming Patterns*.
+7. **Level up abilities** by choosing upgrade paths (1 or 2 keys) for character customization
 
 ### 💡 **Strategy Tips**
 - **High ground advantage:** Jump to elevated positions for better positioning
@@ -82,15 +82,19 @@ Collect crypto coins by defeating enemies and NPCs, then deposit them at your te
 | Action | Key | Description |
 |--------|-----|-------------|
 | **Move** | WASD | Character movement in 3D space |
-| **Jump** | Space | Single jump (8 units high) |
-| **Double Jump** | Space (mid-air) | Second jump for extra height |
-| **Basic Attack** | Left Click | Auto-targeting attack |
-| **Ability 1** | Q | Hold to aim, release to cast |
-| **Ability 2** | E | Hold to aim, release to cast |
-| **Ultimate** | R | Hold to aim, release to cast |
+| **Aim** | Mouse | Aim direction for abilities and targeting |
+| **Jump** | Space | Single jump (tap) or variable height (hold) |
+| **Basic Attack** | Left Click | Auto-attack enemies (hold for continuous) |
+| **Attack NPCs** | Right Click | Priority attack on NPCs (hold for continuous) |
+| **Ability 1** | Q | Basic ability - hold to aim, release to cast |
+| **Ability 2** | E | Basic ability - hold to aim, release to cast |
+| **Ultimate** | G | Special signature ability unique to character |
 | **Interact/Score** | Left Alt | Deposit coins at scoring zones |
-| **Camera Center** | Tab | Reset camera behind character |
-| **Ping** | V | Communicate with team |
+| **Item Use** | C | Activate consumable items |
+| **Home** | Ctrl (hold 1.5s) | Return to base/respawn point |
+| **Ping Wheel** | *TBD* | Quick team communication (Enter/T/Y recommended) |
+| **Ability Path A** | 1 | Select first upgrade path when leveling |
+| **Ability Path B** | 2 | Select second upgrade path when leveling |
 
 ### 📱 **Mobile Controls**
 - **Virtual Joystick:** Character movement

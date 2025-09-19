@@ -12,7 +12,7 @@ namespace MOBA
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
     [RequireComponent(typeof(PlayerInput))]
-    public class SimplePlayerController : MonoBehaviour, IDamageable, IDamageSnapshotReceiver
+    public class SimplePlayerController : MonoBehaviour, IDamageable, IDamageSnapshotReceiver, IEvolutionInputHandler
     {
         [Header("Movement")]
         [SerializeField] private UnifiedMovementSystem movementSystem = new UnifiedMovementSystem();
@@ -43,6 +43,7 @@ namespace MOBA
         private Rigidbody body;
         private PlayerInput playerInput;
         private EnhancedAbilitySystem enhancedAbilitySystem;
+        private AbilityEvolutionHandler evolutionHandler;
 
         private InputAction moveAction;
         private InputAction jumpAction;
@@ -73,6 +74,7 @@ namespace MOBA
             body = GetComponent<Rigidbody>();
             playerInput = GetComponent<PlayerInput>();
             enhancedAbilitySystem = GetComponent<EnhancedAbilitySystem>();
+            evolutionHandler = GetComponent<AbilityEvolutionHandler>();
 
             ConfigureRigidBody();
 
@@ -392,6 +394,89 @@ namespace MOBA
             SetInputEnabled(true);
             respawnRoutine = null;
         }
+
+        #endregion
+
+        #region Input System Interface Implementation
+
+        // Basic Input Actions (existing functionality)
+        public void OnMove(InputAction.CallbackContext context)
+        {
+            if (context.performed)
+            {
+                moveInput = context.ReadValue<Vector2>();
+            }
+            else if (context.canceled)
+            {
+                moveInput = Vector2.zero;
+            }
+        }
+
+        public void OnJump(InputAction.CallbackContext context)
+        {
+            if (context.started)
+            {
+                OnJumpStarted(context);
+            }
+            else if (context.canceled)
+            {
+                OnJumpCanceled(context);
+            }
+        }
+
+        public void OnLMBAttack(InputAction.CallbackContext context) { /* Handled by PlayerAttackSystem */ }
+        public void OnRMBAttack(InputAction.CallbackContext context) { /* Handled by PlayerAttackSystem */ }
+        public void OnAbilityQ(InputAction.CallbackContext context) { /* Handled by EnhancedAbilitySystem */ }
+        public void OnAbilityE(InputAction.CallbackContext context) { /* Handled by EnhancedAbilitySystem */ }
+        public void OnAbilityG(InputAction.CallbackContext context) { /* Handled by EnhancedAbilitySystem */ }
+        public void OnChat(InputAction.CallbackContext context) { /* Handled by ChatPingSystem */ }
+
+        #region IEvolutionInputHandler Implementation
+
+        /// <summary>
+        /// Handle first evolution path selection (mapped to "1" key)
+        /// </summary>
+        public void OnEvolutionPath1()
+        {
+            if (evolutionHandler != null)
+            {
+                evolutionHandler.SelectEvolutionPath(EvolutionPath.PathA);
+            }
+        }
+
+        /// <summary>
+        /// Handle second evolution path selection (mapped to "2" key)
+        /// </summary>
+        public void OnEvolutionPath2()
+        {
+            if (evolutionHandler != null)
+            {
+                evolutionHandler.SelectEvolutionPath(EvolutionPath.PathB);
+            }
+        }
+
+        #endregion
+
+        #region Unite-Style Evolution Input System
+
+        // Evolution Input Handlers
+        public void OnAbilitySelect1(InputAction.CallbackContext context)
+        {
+            if (context.performed)
+            {
+                OnEvolutionPath1();
+            }
+        }
+
+        public void OnAbilitySelect2(InputAction.CallbackContext context)
+        {
+            if (context.performed)
+            {
+                OnEvolutionPath2();
+            }
+        }
+
+        #endregion
 
         #endregion
 

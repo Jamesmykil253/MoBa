@@ -3,8 +3,8 @@ using Unity.Netcode;
 using System.Collections;
 using System.Collections.Generic;
 using MOBA.Debugging;
-using MOBA.Effects;
 using MOBA.Networking;
+using MOBA.Effects;
 
 namespace MOBA.Abilities
 {
@@ -54,6 +54,11 @@ namespace MOBA.Abilities
         /// </summary>
         private AbilityCombatManager combatManager;
         
+        /// <summary>
+        /// Reference to lag compensation manager for hit validation
+        /// </summary>
+        private LagCompensationManager lagCompensationManager;
+        
         #endregion
         
         #region Events
@@ -81,11 +86,15 @@ namespace MOBA.Abilities
         {
             base.Initialize(abilitySystem);
             
+            // Initialize lag compensation manager reference
+            lagCompensationManager = FindFirstObjectByType<LagCompensationManager>();
+            
             if (logExecutionEvents)
             {
                 GameDebug.Log(
                     BuildContext(GameDebugMechanicTag.AbilityUse),
-                    "Execution manager initialized.");
+                    "Execution manager initialized.",
+                    ("LagCompensationAvailable", lagCompensationManager != null));
             }
         }
         
@@ -495,7 +504,7 @@ namespace MOBA.Abilities
         }
         
         /// <summary>
-        /// Applies damage to a target
+        /// Applies damage to a target with lag compensation validation
         /// </summary>
         /// <param name="hitResult">Hit result data</param>
         private void ApplyDamage(AbilityHitResult hitResult)
@@ -503,16 +512,60 @@ namespace MOBA.Abilities
             var damageable = hitResult.Target.GetComponent<IDamageable>();
             if (damageable != null)
             {
-                damageable.TakeDamage(hitResult.Damage);
+                // Validate hit with lag compensation if available
+                bool hitValid = true;
+                var targetNetworkObject = hitResult.Target.GetComponent<NetworkObject>();
                 
-                if (logExecutionEvents)
+                if (lagCompensationManager != null && targetNetworkObject != null && NetworkManager.Singleton.IsServer)
                 {
-                    GameDebug.Log(
-                        BuildContext(GameDebugMechanicTag.AbilityUse),
-                        "Damage applied to target.",
-                        ("Target", hitResult.Target.name),
-                        ("Damage", hitResult.Damage),
-                        ("Critical", hitResult.IsCritical));
+                    // Get owner client ID from the player controller
+                    ulong ownerClientId = 0;
+                    var playerController = GetComponent<SimplePlayerController>();
+                    if (playerController != null)
+                    {
+                        var playerNetworkObject = playerController.GetComponent<NetworkObject>();
+                        if (playerNetworkObject != null)
+                        {
+                            ownerClientId = playerNetworkObject.OwnerClientId;
+                        }
+                    }
+                    
+                    float clientTimestamp = NetworkManager.Singleton.ServerTime.TimeAsFloat;
+                    hitValid = lagCompensationManager.ValidateAbilityHit(
+                        ownerClientId,
+                        targetNetworkObject.NetworkObjectId,
+                        hitResult.Damage,
+                        transform.position,
+                        clientTimestamp,
+                        "ability_unknown" // Could be enhanced with actual ability ID tracking
+                    );
+                }
+                
+                if (hitValid)
+                {
+                    damageable.TakeDamage(hitResult.Damage);
+                    
+                    if (logExecutionEvents)
+                    {
+                        GameDebug.Log(
+                            BuildContext(GameDebugMechanicTag.AbilityUse),
+                            "Damage applied to target.",
+                            ("Target", hitResult.Target.name),
+                            ("Damage", hitResult.Damage),
+                            ("Critical", hitResult.IsCritical),
+                            ("LagCompensationValidated", lagCompensationManager != null));
+                    }
+                }
+                else
+                {
+                    if (logExecutionEvents)
+                    {
+                        GameDebug.Log(
+                            BuildContext(GameDebugMechanicTag.AbilityUse),
+                            "Damage rejected by lag compensation.",
+                            ("Target", hitResult.Target.name),
+                            ("Damage", hitResult.Damage));
+                    }
                 }
             }
         }

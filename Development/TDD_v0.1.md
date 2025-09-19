@@ -8,6 +8,32 @@ The game runs a fixed update loop on the server.  Clients simulate locally and p
 
 Data used to configure heroes, abilities, match modes and scoring resides in ScriptableObject assets.  ScriptableObjects are serializable Unity types that act as data containers independent of GameObjects【518224335480678†L83-L109】.
 
+## Input System Architecture
+
+### Modern Input Framework
+The game utilizes Unity's Input System with comprehensive control scheme support:
+
+**Control Schemes Supported:**
+- **Keyboard & Mouse** (Primary PC gaming)
+- **Gamepad** (Console-style controllers) 
+- **Touch** (Mobile devices)
+- **Joystick** (Legacy controller support)
+- **XR** (VR/AR headset controllers)
+
+**Input Processing Flow:**
+1. Unity Input System captures input across all supported devices
+2. Input actions mapped to game functions via `InputSystem_Actions.inputactions`
+3. Input buffering (0.1s window) ensures responsive ability casting
+4. Server validates all gameplay-affecting inputs for anti-cheat
+5. Client prediction with server reconciliation maintains responsiveness
+
+**Key Control Mappings:**
+- **Q/E/G**: Ability 1, Ability 2, Ultimate (corrected from previous Q/W/E/R)
+- **LMB/RMB**: Smart attack targeting with priority systems
+- **1/2 Keys**: Ability evolution path selection (Pokemon Unite-style)
+- **Space**: Variable jump height (tap vs hold)
+- **Ping Wheel**: Team communication system (implementation pending)
+
 ## Match Loop State Machine
 
 The match loop controls the high‑level progression of a game session.  It runs exclusively on the server and replicates its state to clients via a NetworkVariable or an RPC.  The states and transitions are as follows:

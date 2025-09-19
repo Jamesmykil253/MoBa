@@ -133,11 +133,8 @@ namespace MOBA
                 return false;
             }
 
-            if (existingGameManager.StartMatch())
-            {
-                return true;
-            }
-
+            existingGameManager.StartMatch();
+            
             if (existingGameManager.IsGameActive())
             {
                 return true;

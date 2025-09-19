@@ -3,6 +3,7 @@
     "rootNamespace": "MOBA.Tests.EditMode",
     "references": [
         "MOBA.Runtime",
+        "Unity.Netcode.Runtime",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

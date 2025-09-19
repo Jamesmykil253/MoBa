@@ -1,0 +1,1144 @@
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.InputSystem;
+using System.Collections.Generic;
+
+namespace MOBA.UI
+{
+    /// <summary>
+    /// Ability evolution UI for Pokemon Unite-style ability upgrades
+    /// Provides dynamic ability point allocation and visual feedback
+    /// Reference: Pokemon Unite UI/UX, MOBA progression systems
+    /// </summary>
+    public class AbilityEvolutionUI : MonoBehaviour
+    {
+        #region Configuration
+        
+        [Header("UI Components")]
+        [SerializeField, Tooltip("Main UI container")]
+        private RectTransform mainContainer;
+        
+        [SerializeField, Tooltip("Ability slot prefab")]
+        private GameObject abilitySlotPrefab;
+        
+        [SerializeField, Tooltip("Evolution path line prefab")]
+        private GameObject evolutionLinePrefab;
+        
+        [SerializeField, Tooltip("Available points display")]
+        private Text availablePointsText;
+        
+        [SerializeField, Tooltip("Level display")]
+        private Text levelDisplayText;
+        
+        [SerializeField, Tooltip("Confirm button")]
+        private Button confirmButton;
+        
+        [SerializeField, Tooltip("Reset button")]
+        private Button resetButton;
+        
+        [Header("Layout Settings")]
+        [SerializeField, Tooltip("Ability slots per row")]
+        private int slotsPerRow = 4;
+        
+        [SerializeField, Tooltip("Spacing between slots")]
+        private Vector2 slotSpacing = new Vector2(100f, 120f);
+        
+        [SerializeField, Tooltip("Slot size")]
+        private Vector2 slotSize = new Vector2(80f, 80f);
+        
+        [Header("Animation Settings")]
+        [SerializeField, Tooltip("Slot animation duration")]
+        private float slotAnimationDuration = 0.3f;
+        
+        [SerializeField, Tooltip("Glow effect duration")]
+        private float glowEffectDuration = 0.5f;
+        
+        [SerializeField, Tooltip("Evolution line draw speed")]
+        private float lineDrawSpeed = 2f;
+        
+        [Header("Visual Effects")]
+        [SerializeField, Tooltip("Upgrade particle effect")]
+        private GameObject upgradeParticlePrefab;
+        
+        [SerializeField, Tooltip("Evolution glow effect")]
+        private GameObject evolutionGlowPrefab;
+        
+        [Header("Input")]
+        [SerializeField, Tooltip("Input action for opening evolution menu")]
+        private InputActionReference evolutionMenuAction;
+        
+        #endregion
+        
+        #region Ability System Definitions
+        
+        /// <summary>
+        /// Ability types in the MOBA
+        /// </summary>
+        public enum AbilityType
+        {
+            Basic,      // Q ability
+            Skill,      // W ability  
+            Ultimate,   // R ability
+            Passive,    // Passive ability
+            Enhancement // Stat enhancement
+        }
+        
+        /// <summary>
+        /// Ability evolution tier
+        /// </summary>
+        public enum EvolutionTier
+        {
+            Base = 0,       // Level 1-3
+            Enhanced = 1,   // Level 4-6
+            Advanced = 2,   // Level 7-9
+            Master = 3      // Level 10+
+        }
+        
+        /// <summary>
+        /// Ability data for evolution system
+        /// </summary>
+        [System.Serializable]
+        public class AbilityData
+        {
+            public string abilityId;
+            public string abilityName;
+            public string description;
+            public AbilityType type;
+            public Sprite icon;
+            public Color abilityColor;
+            
+            [Header("Evolution")]
+            public int minLevel;
+            public int maxLevel;
+            public List<string> prerequisites;
+            public List<AbilityEvolution> evolutions;
+            
+            [Header("Stats")]
+            public float baseDamage;
+            public float baseHealing;
+            public float baseCooldown;
+            public float baseManaCost;
+        }
+        
+        /// <summary>
+        /// Ability evolution definition
+        /// </summary>
+        [System.Serializable]
+        public class AbilityEvolution
+        {
+            public string evolutionName;
+            public string evolutionDescription;
+            public EvolutionTier tier;
+            public Sprite evolutionIcon;
+            public int requiredLevel;
+            public int abilityPointCost;
+            
+            [Header("Stat Modifications")]
+            public float damageMultiplier = 1f;
+            public float healingMultiplier = 1f;
+            public float cooldownMultiplier = 1f;
+            public float manaCostMultiplier = 1f;
+            public float rangeMultiplier = 1f;
+            
+            [Header("Special Effects")]
+            public List<string> addedEffects;
+            public string visualUpgrade;
+            public string soundEffect;
+        }
+        
+        /// <summary>
+        /// Runtime ability slot component
+        /// </summary>
+        public class AbilitySlotUI : MonoBehaviour
+        {
+            [Header("Components")]
+            public Image iconImage;
+            public Image backgroundImage;
+            public Image borderImage;
+            public Image lockOverlay;
+            public Text levelText;
+            public Text nameText;
+            public Button slotButton;
+            public GameObject glowEffect;
+            public GameObject upgradeVFX;
+            
+            [Header("State")]
+            public AbilityData abilityData;
+            public AbilityEvolution currentEvolution;
+            public int currentLevel;
+            public int slotIndex;
+            public bool isLocked;
+            public bool isSelected;
+            public bool canUpgrade;
+            
+            private Color originalBorderColor;
+            private Vector3 originalScale;
+            
+            public void Initialize(AbilityData data, int index, System.Action<int> onClicked)
+            {
+                abilityData = data;
+                slotIndex = index;
+                currentLevel = 0;
+                
+                // Set up visual components
+                if (iconImage != null && data.icon != null)
+                {
+                    iconImage.sprite = data.icon;
+                }
+                
+                if (nameText != null)
+                {
+                    nameText.text = data.abilityName;
+                }
+                
+                if (backgroundImage != null)
+                {
+                    backgroundImage.color = data.abilityColor;
+                }
+                
+                // Set up button
+                if (slotButton != null)
+                {
+                    slotButton.onClick.AddListener(() => onClicked(index));
+                }
+                
+                // Store original values
+                originalScale = transform.localScale;
+                originalBorderColor = borderImage != null ? borderImage.color : Color.white;
+                
+                // Set up hover effects
+                SetupHoverEffects();
+                
+                // Initial state
+                UpdateVisualState();
+            }
+            
+            private void SetupHoverEffects()
+            {
+                var eventTrigger = gameObject.GetComponent<UnityEngine.EventSystems.EventTrigger>();
+                if (eventTrigger == null)
+                {
+                    eventTrigger = gameObject.AddComponent<UnityEngine.EventSystems.EventTrigger>();
+                }
+                
+                // Mouse enter
+                var pointerEnter = new UnityEngine.EventSystems.EventTrigger.Entry();
+                pointerEnter.eventID = UnityEngine.EventSystems.EventTriggerType.PointerEnter;
+                pointerEnter.callback.AddListener((data) => OnHoverStart());
+                eventTrigger.triggers.Add(pointerEnter);
+                
+                // Mouse exit
+                var pointerExit = new UnityEngine.EventSystems.EventTrigger.Entry();
+                pointerExit.eventID = UnityEngine.EventSystems.EventTriggerType.PointerExit;
+                pointerExit.callback.AddListener((data) => OnHoverEnd());
+                eventTrigger.triggers.Add(pointerExit);
+            }
+            
+            public void OnHoverStart()
+            {
+                if (isLocked) return;
+                
+                // Scale up animation
+                transform.DOScale(originalScale * 1.1f, 0.2f)
+                    .SetEase(Ease.OutBack);
+                
+                // Border highlight
+                if (borderImage != null)
+                {
+                    borderImage.DOColor(Color.white, 0.2f);
+                }
+                
+                // Glow effect
+                if (glowEffect != null)
+                {
+                    glowEffect.SetActive(true);
+                    var glowImage = glowEffect.GetComponent<Image>();
+                    if (glowImage != null)
+                    {
+                        glowImage.DOFade(0.8f, 0.2f);
+                    }
+                }
+            }
+            
+            public void OnHoverEnd()
+            {
+                if (isSelected) return;
+                
+                // Scale down
+                transform.DOScale(originalScale, 0.2f)
+                    .SetEase(Ease.OutQuad);
+                
+                // Reset border
+                if (borderImage != null)
+                {
+                    borderImage.DOColor(originalBorderColor, 0.2f);
+                }
+                
+                // Hide glow
+                if (glowEffect != null)
+                {
+                    var glowImage = glowEffect.GetComponent<Image>();
+                    if (glowImage != null)
+                    {
+                        glowImage.DOFade(0f, 0.2f).OnComplete(() => {
+                            glowEffect.SetActive(false);
+                        });
+                    }
+                }
+            }
+            
+            public void SetSelected(bool selected)
+            {
+                isSelected = selected;
+                
+                if (selected)
+                {
+                    // Selection animation
+                    transform.DOPunchScale(Vector3.one * 0.1f, 0.3f, 8, 0.5f);
+                    
+                    if (borderImage != null)
+                    {
+                        borderImage.color = Color.yellow;
+                        borderImage.DOColor(Color.green, 0.5f);
+                    }
+                }
+                else
+                {
+                    OnHoverEnd();
+                }
+            }
+            
+            public void UpgradeAbility()
+            {
+                if (!canUpgrade) return;
+                
+                currentLevel++;
+                
+                // Update evolution if available
+                if (abilityData.evolutions.Count > currentLevel - 1)
+                {
+                    currentEvolution = abilityData.evolutions[currentLevel - 1];
+                    
+                    // Update icon
+                    if (iconImage != null && currentEvolution.evolutionIcon != null)
+                    {
+                        iconImage.sprite = currentEvolution.evolutionIcon;
+                    }
+                }
+                
+                // Upgrade animation
+                PlayUpgradeAnimation();
+                
+                // Update visual state
+                UpdateVisualState();
+            }
+            
+            private void PlayUpgradeAnimation()
+            {
+                // Scale punch
+                transform.DOPunchScale(Vector3.one * 0.2f, 0.5f, 8, 0.8f);
+                
+                // Color flash
+                if (iconImage != null)
+                {
+                    var originalColor = iconImage.color;
+                    iconImage.DOColor(Color.white, 0.1f).OnComplete(() => {
+                        iconImage.DOColor(originalColor, 0.3f);
+                    });
+                }
+                
+                // Particle effect
+                if (upgradeVFX != null)
+                {
+                    var vfx = Instantiate(upgradeVFX, transform);
+                    Destroy(vfx, 2f);
+                }
+            }
+            
+            public void UpdateVisualState()
+            {
+                // Update level text
+                if (levelText != null)
+                {
+                    levelText.text = currentLevel.ToString();
+                    levelText.gameObject.SetActive(currentLevel > 0);
+                }
+                
+                // Update lock state
+                if (lockOverlay != null)
+                {
+                    lockOverlay.gameObject.SetActive(isLocked);
+                }
+                
+                // Update interactability
+                if (slotButton != null)
+                {
+                    slotButton.interactable = !isLocked && canUpgrade;
+                }
+                
+                // Update color based on state
+                float alpha = isLocked ? 0.5f : 1f;
+                if (iconImage != null)
+                {
+                    var color = iconImage.color;
+                    color.a = alpha;
+                    iconImage.color = color;
+                }
+            }
+        }
+        
+        #endregion
+        
+        #region State Data
+        
+        [Header("Runtime Data")]
+        [SerializeField] private List<AbilityData> availableAbilities = new List<AbilityData>();
+        [SerializeField] private List<AbilitySlotUI> abilitySlots = new List<AbilitySlotUI>();
+        [SerializeField] private Dictionary<string, int> abilityLevels = new Dictionary<string, int>();
+        
+        private int playerLevel = 1;
+        private int availableAbilityPoints = 0;
+        private int selectedSlotIndex = -1;
+        private bool isMenuOpen = false;
+        
+        // Animation state
+        private Coroutine openAnimationCoroutine;
+        private List<GameObject> evolutionLines = new List<GameObject>();
+        
+        #endregion
+        
+        #region Events
+        
+        /// <summary>
+        /// Event fired when ability is upgraded
+        /// </summary>
+        public System.Action<string, int> OnAbilityUpgraded;
+        
+        /// <summary>
+        /// Event fired when evolution menu opens/closes
+        /// </summary>
+        public System.Action<bool> OnMenuToggled;
+        
+        /// <summary>
+        /// Event fired when ability points change
+        /// </summary>
+        public System.Action<int> OnAbilityPointsChanged;
+        
+        #endregion
+        
+        #region Unity Lifecycle
+        
+        private void Awake()
+        {
+            // Initialize ability data
+            InitializeAbilityData();
+            
+            // Set initial state
+            mainContainer.gameObject.SetActive(false);
+            mainContainer.localScale = Vector3.zero;
+        }
+        
+        private void OnEnable()
+        {
+            if (evolutionMenuAction != null)
+            {
+                evolutionMenuAction.action.performed += OnEvolutionMenuToggle;
+                evolutionMenuAction.action.Enable();
+            }
+            
+            // Set up button listeners
+            if (confirmButton != null)
+            {
+                confirmButton.onClick.AddListener(ConfirmUpgrades);
+            }
+            
+            if (resetButton != null)
+            {
+                resetButton.onClick.AddListener(ResetAbilities);
+            }
+        }
+        
+        private void OnDisable()
+        {
+            if (evolutionMenuAction != null)
+            {
+                evolutionMenuAction.action.performed -= OnEvolutionMenuToggle;
+                evolutionMenuAction.action.Disable();
+            }
+        }
+        
+        private void Start()
+        {
+            CreateAbilitySlots();
+            UpdateDisplay();
+        }
+        
+        #endregion
+        
+        #region Initialization
+        
+        /// <summary>
+        /// Initialize ability data (would normally load from game data)
+        /// </summary>
+        private void InitializeAbilityData()
+        {
+            // Example ability data - in production this would be loaded from configuration
+            var basicAttack = new AbilityData
+            {
+                abilityId = "basic_attack",
+                abilityName = "Basic Attack",
+                description = "Enhanced basic attacks",
+                type = AbilityType.Basic,
+                minLevel = 1,
+                maxLevel = 5,
+                baseDamage = 100f,
+                baseCooldown = 0f
+            };
+            
+            var skillShot = new AbilityData
+            {
+                abilityId = "skill_shot",
+                abilityName = "Skill Shot",
+                description = "Ranged projectile ability",
+                type = AbilityType.Skill,
+                minLevel = 3,
+                maxLevel = 5,
+                baseDamage = 200f,
+                baseCooldown = 6f
+            };
+            
+            var ultimate = new AbilityData
+            {
+                abilityId = "ultimate",
+                abilityName = "Ultimate",
+                description = "Powerful ultimate ability",
+                type = AbilityType.Ultimate,
+                minLevel = 6,
+                maxLevel = 3,
+                baseDamage = 500f,
+                baseCooldown = 60f
+            };
+            
+            availableAbilities.Add(basicAttack);
+            availableAbilities.Add(skillShot);
+            availableAbilities.Add(ultimate);
+            
+            // Initialize ability levels
+            foreach (var ability in availableAbilities)
+            {
+                abilityLevels[ability.abilityId] = 0;
+            }
+        }
+        
+        /// <summary>
+        /// Create ability slot UI elements
+        /// </summary>
+        private void CreateAbilitySlots()
+        {
+            if (abilitySlotPrefab == null)
+            {
+                Debug.LogError("[AbilityEvolutionUI] Ability slot prefab is not assigned!");
+                return;
+            }
+            
+            for (int i = 0; i < availableAbilities.Count; i++)
+            {
+                var slotGO = Instantiate(abilitySlotPrefab, mainContainer);
+                var slotUI = slotGO.GetComponent<AbilitySlotUI>();
+                
+                if (slotUI == null)
+                {
+                    slotUI = slotGO.AddComponent<AbilitySlotUI>();
+                    
+                    // Set up components if not already present
+                    slotUI.iconImage = slotGO.GetComponent<Image>();
+                    slotUI.backgroundImage = slotGO.transform.GetChild(0)?.GetComponent<Image>();
+                    slotUI.borderImage = slotGO.transform.GetChild(1)?.GetComponent<Image>();
+                    slotUI.lockOverlay = slotGO.transform.GetChild(2)?.GetComponent<Image>();
+                    slotUI.levelText = slotGO.GetComponentInChildren<Text>();
+                    slotUI.slotButton = slotGO.GetComponent<Button>();
+                    
+                    if (slotUI.slotButton == null)
+                    {
+                        slotUI.slotButton = slotGO.AddComponent<Button>();
+                    }
+                }
+                
+                // Initialize slot
+                slotUI.Initialize(availableAbilities[i], i, OnAbilitySlotClicked);
+                
+                // Position in grid
+                int row = i / slotsPerRow;
+                int col = i % slotsPerRow;
+                
+                Vector3 position = new Vector3(
+                    col * slotSpacing.x - (slotsPerRow - 1) * slotSpacing.x * 0.5f,
+                    -row * slotSpacing.y,
+                    0
+                );
+                slotUI.transform.localPosition = position;
+                
+                // Set size
+                slotUI.GetComponent<RectTransform>().sizeDelta = slotSize;
+                
+                abilitySlots.Add(slotUI);
+            }
+            
+            CreateEvolutionLines();
+        }
+        
+        /// <summary>
+        /// Create evolution connection lines
+        /// </summary>
+        private void CreateEvolutionLines()
+        {
+            if (evolutionLinePrefab == null) return;
+            
+            // Create lines between related abilities
+            for (int i = 0; i < abilitySlots.Count - 1; i++)
+            {
+                var lineGO = Instantiate(evolutionLinePrefab, mainContainer);
+                var lineImage = lineGO.GetComponent<Image>();
+                
+                if (lineImage != null)
+                {
+                    // Position line between slots
+                    Vector3 startPos = abilitySlots[i].transform.localPosition;
+                    Vector3 endPos = abilitySlots[i + 1].transform.localPosition;
+                    
+                    Vector3 centerPos = (startPos + endPos) * 0.5f;
+                    lineGO.transform.localPosition = centerPos;
+                    
+                    // Calculate rotation and scale
+                    Vector3 direction = endPos - startPos;
+                    float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
+                    lineGO.transform.rotation = Quaternion.AngleAxis(angle, Vector3.forward);
+                    
+                    var rectTransform = lineGO.GetComponent<RectTransform>();
+                    rectTransform.sizeDelta = new Vector2(direction.magnitude, 4f);
+                    
+                    // Initially hidden
+                    lineImage.fillAmount = 0f;
+                }
+                
+                evolutionLines.Add(lineGO);
+            }
+        }
+        
+        #endregion
+        
+        #region Input Handling
+        
+        /// <summary>
+        /// Handle evolution menu toggle input
+        /// </summary>
+        private void OnEvolutionMenuToggle(InputAction.CallbackContext context)
+        {
+            if (isMenuOpen)
+            {
+                CloseMenu();
+            }
+            else
+            {
+                OpenMenu();
+            }
+        }
+        
+        /// <summary>
+        /// Handle ability slot click
+        /// </summary>
+        private void OnAbilitySlotClicked(int slotIndex)
+        {
+            if (slotIndex < 0 || slotIndex >= abilitySlots.Count)
+                return;
+                
+            var slot = abilitySlots[slotIndex];
+            var ability = availableAbilities[slotIndex];
+            
+            // Check if upgrade is possible
+            if (CanUpgradeAbility(ability))
+            {
+                UpgradeAbility(slotIndex);
+            }
+            else
+            {
+                // Show why upgrade is not possible
+                ShowUpgradeBlockedFeedback(slot, ability);
+            }
+        }
+        
+        #endregion
+        
+        #region Menu Management
+        
+        /// <summary>
+        /// Open the evolution menu
+        /// </summary>
+        public void OpenMenu()
+        {
+            if (isMenuOpen) return;
+            
+            isMenuOpen = true;
+            
+            // Activate container
+            mainContainer.gameObject.SetActive(true);
+            
+            // Update ability states
+            UpdateAbilityStates();
+            
+            // Animate opening
+            AnimateMenuOpen();
+            
+            OnMenuToggled?.Invoke(true);
+            
+            Debug.Log("[AbilityEvolutionUI] Menu opened");
+        }
+        
+        /// <summary>
+        /// Close the evolution menu
+        /// </summary>
+        public void CloseMenu()
+        {
+            if (!isMenuOpen) return;
+            
+            isMenuOpen = false;
+            
+            // Animate closing
+            AnimateMenuClose();
+            
+            OnMenuToggled?.Invoke(false);
+            
+            Debug.Log("[AbilityEvolutionUI] Menu closed");
+        }
+        
+        #endregion
+        
+        #region Animation
+        
+        /// <summary>
+        /// Animate menu opening with Unity built-in animations
+        /// </summary>
+        private void AnimateMenuOpen()
+        {
+            // Stop existing animation
+            if (openAnimationCoroutine != null)
+                StopCoroutine(openAnimationCoroutine);
+            
+            openAnimationCoroutine = StartCoroutine(AnimateMenuOpenCoroutine());
+        }
+        
+        private System.Collections.IEnumerator AnimateMenuOpenCoroutine()
+        {
+            // Container scale up
+            mainContainer.localScale = Vector3.zero;
+            
+            float elapsed = 0f;
+            while (elapsed < slotAnimationDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / slotAnimationDuration;
+                
+                // Ease out back approximation
+                t = t * t * (3f * t - 2f);
+                mainContainer.localScale = Vector3.one * t;
+                
+                yield return null;
+            }
+            mainContainer.localScale = Vector3.one;
+            
+            // Animate slots appearing
+            for (int i = 0; i < abilitySlots.Count; i++)
+            {
+                var slot = abilitySlots[i];
+                slot.transform.localScale = Vector3.zero;
+                
+                StartCoroutine(AnimateSlotAppear(slot.transform, i * 0.1f));
+            }
+            
+            // Draw evolution lines
+            for (int i = 0; i < evolutionLines.Count; i++)
+            {
+                var line = evolutionLines[i].GetComponent<Image>();
+                if (line != null)
+                {
+                    StartCoroutine(AnimateLineDraw(line, (i + 1) * 0.2f));
+                }
+            }
+        }
+        
+        private System.Collections.IEnumerator AnimateSlotAppear(Transform slot, float delay)
+        {
+            yield return new WaitForSeconds(delay);
+            
+            float elapsed = 0f;
+            while (elapsed < slotAnimationDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / slotAnimationDuration;
+                slot.localScale = Vector3.one * t;
+                yield return null;
+            }
+            slot.localScale = Vector3.one;
+        }
+        
+        private System.Collections.IEnumerator AnimateLineDraw(Image line, float delay)
+        {
+            yield return new WaitForSeconds(delay);
+            
+            float elapsed = 0f;
+            line.fillAmount = 0f;
+            
+            while (elapsed < lineDrawSpeed / 2f)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / (lineDrawSpeed / 2f);
+                line.fillAmount = t;
+                yield return null;
+            }
+            line.fillAmount = 1f;
+        }
+        
+        /// <summary>
+        /// Animate menu closing
+        /// </summary>
+        private void AnimateMenuClose()
+        {
+            // Stop existing animation
+            if (openAnimationCoroutine != null)
+                StopCoroutine(openAnimationCoroutine);
+            
+            openAnimationCoroutine = StartCoroutine(AnimateMenuCloseCoroutine());
+        }
+        
+        private System.Collections.IEnumerator AnimateMenuCloseCoroutine()
+        {
+            float elapsed = 0f;
+            Vector3 startScale = mainContainer.localScale;
+            
+            while (elapsed < slotAnimationDuration * 0.5f)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / (slotAnimationDuration * 0.5f);
+                mainContainer.localScale = Vector3.Lerp(startScale, Vector3.zero, t);
+                yield return null;
+            }
+            
+            mainContainer.localScale = Vector3.zero;
+            gameObject.SetActive(false);
+        }
+        
+        #endregion
+        
+        #region Ability Management
+        
+        /// <summary>
+        /// Check if ability can be upgraded
+        /// </summary>
+        private bool CanUpgradeAbility(AbilityData ability)
+        {
+            // Check available points
+            if (availableAbilityPoints <= 0)
+                return false;
+                
+            // Check current level vs max
+            int currentLevel = abilityLevels[ability.abilityId];
+            if (currentLevel >= ability.maxLevel)
+                return false;
+                
+            // Check player level requirement
+            if (playerLevel < ability.minLevel)
+                return false;
+                
+            // Check prerequisites
+            foreach (var prereq in ability.prerequisites)
+            {
+                if (!abilityLevels.ContainsKey(prereq) || abilityLevels[prereq] == 0)
+                {
+                    return false;
+                }
+            }
+            
+            return true;
+        }
+        
+        /// <summary>
+        /// Upgrade specific ability
+        /// </summary>
+        private void UpgradeAbility(int slotIndex)
+        {
+            if (slotIndex < 0 || slotIndex >= abilitySlots.Count)
+                return;
+                
+            var slot = abilitySlots[slotIndex];
+            var ability = availableAbilities[slotIndex];
+            
+            if (!CanUpgradeAbility(ability))
+                return;
+                
+            // Spend ability point
+            availableAbilityPoints--;
+            
+            // Upgrade ability level
+            abilityLevels[ability.abilityId]++;
+            
+            // Update slot
+            slot.UpgradeAbility();
+            
+            // Update display
+            UpdateDisplay();
+            UpdateAbilityStates();
+            
+            // Fire event
+            OnAbilityUpgraded?.Invoke(ability.abilityId, abilityLevels[ability.abilityId]);
+            OnAbilityPointsChanged?.Invoke(availableAbilityPoints);
+            
+            Debug.Log($"[AbilityEvolutionUI] Upgraded {ability.abilityName} to level {abilityLevels[ability.abilityId]}");
+        }
+        
+        /// <summary>
+        /// Update ability states based on current conditions
+        /// </summary>
+        private void UpdateAbilityStates()
+        {
+            for (int i = 0; i < abilitySlots.Count; i++)
+            {
+                var slot = abilitySlots[i];
+                var ability = availableAbilities[i];
+                
+                // Update current level
+                slot.currentLevel = abilityLevels[ability.abilityId];
+                
+                // Update lock state
+                slot.isLocked = playerLevel < ability.minLevel;
+                
+                // Update upgrade availability
+                slot.canUpgrade = CanUpgradeAbility(ability);
+                
+                // Update visual state
+                slot.UpdateVisualState();
+            }
+        }
+        
+        /// <summary>
+        /// Show feedback when upgrade is blocked
+        /// </summary>
+        private void ShowUpgradeBlockedFeedback(AbilitySlotUI slot, AbilityData ability)
+        {
+            // Shake animation to indicate blocked
+            slot.transform.DOShakePosition(0.3f, 5f, 10, 90f, false, true);
+            
+            // Red flash
+            if (slot.borderImage != null)
+            {
+                var originalColor = slot.borderImage.color;
+                slot.borderImage.DOColor(Color.red, 0.1f).OnComplete(() => {
+                    slot.borderImage.DOColor(originalColor, 0.2f);
+                });
+            }
+            
+            // Could show tooltip with reason
+            string reason = GetUpgradeBlockedReason(ability);
+            Debug.Log($"[AbilityEvolutionUI] Cannot upgrade {ability.abilityName}: {reason}");
+        }
+        
+        /// <summary>
+        /// Get reason why upgrade is blocked
+        /// </summary>
+        private string GetUpgradeBlockedReason(AbilityData ability)
+        {
+            if (availableAbilityPoints <= 0)
+                return "No ability points available";
+                
+            if (abilityLevels[ability.abilityId] >= ability.maxLevel)
+                return "Ability at maximum level";
+                
+            if (playerLevel < ability.minLevel)
+                return $"Requires player level {ability.minLevel}";
+                
+            foreach (var prereq in ability.prerequisites)
+            {
+                if (!abilityLevels.ContainsKey(prereq) || abilityLevels[prereq] == 0)
+                {
+                    return $"Requires {prereq} ability";
+                }
+            }
+            
+            return "Unknown requirement not met";
+        }
+        
+        #endregion
+        
+        #region UI Updates
+        
+        /// <summary>
+        /// Update UI display elements
+        /// </summary>
+        private void UpdateDisplay()
+        {
+            // Update available points
+            if (availablePointsText != null)
+            {
+                availablePointsText.text = $"Available Points: {availableAbilityPoints}";
+            }
+            
+            // Update level display
+            if (levelDisplayText != null)
+            {
+                levelDisplayText.text = $"Level: {playerLevel}";
+            }
+            
+            // Update button states
+            if (confirmButton != null)
+            {
+                confirmButton.interactable = HasPendingUpgrades();
+            }
+            
+            if (resetButton != null)
+            {
+                resetButton.interactable = HasAnyUpgrades();
+            }
+        }
+        
+        /// <summary>
+        /// Check if there are pending upgrades to confirm
+        /// </summary>
+        private bool HasPendingUpgrades()
+        {
+            // For now, upgrades are applied immediately
+            // This could be changed to require confirmation
+            return false;
+        }
+        
+        /// <summary>
+        /// Check if player has any ability upgrades
+        /// </summary>
+        private bool HasAnyUpgrades()
+        {
+            foreach (var level in abilityLevels.Values)
+            {
+                if (level > 0) return true;
+            }
+            return false;
+        }
+        
+        #endregion
+        
+        #region Button Handlers
+        
+        /// <summary>
+        /// Confirm pending upgrades
+        /// </summary>
+        private void ConfirmUpgrades()
+        {
+            // In this implementation, upgrades are applied immediately
+            // This method could be used for batch confirmation
+            Debug.Log("[AbilityEvolutionUI] Upgrades confirmed");
+            CloseMenu();
+        }
+        
+        /// <summary>
+        /// Reset all ability upgrades
+        /// </summary>
+        private void ResetAbilities()
+        {
+            // Reset all ability levels
+            var keys = new List<string>(abilityLevels.Keys);
+            foreach (var key in keys)
+            {
+                int resetPoints = abilityLevels[key];
+                abilityLevels[key] = 0;
+                availableAbilityPoints += resetPoints;
+            }
+            
+            // Reset slot visuals
+            foreach (var slot in abilitySlots)
+            {
+                slot.currentLevel = 0;
+                slot.currentEvolution = null;
+                
+                // Reset icon to base ability
+                if (slot.iconImage != null && slot.abilityData.icon != null)
+                {
+                    slot.iconImage.sprite = slot.abilityData.icon;
+                }
+                
+                slot.UpdateVisualState();
+            }
+            
+            // Update display
+            UpdateDisplay();
+            UpdateAbilityStates();
+            
+            OnAbilityPointsChanged?.Invoke(availableAbilityPoints);
+            
+            Debug.Log("[AbilityEvolutionUI] All abilities reset");
+        }
+        
+        #endregion
+        
+        #region Public Interface
+        
+        /// <summary>
+        /// Set player level and update ability points
+        /// </summary>
+        /// <param name="level">New player level</param>
+        /// <param name="bonusPoints">Bonus ability points to add</param>
+        public void SetPlayerLevel(int level, int bonusPoints = 1)
+        {
+            int levelDifference = level - playerLevel;
+            playerLevel = level;
+            
+            // Award ability points for level up
+            if (levelDifference > 0)
+            {
+                availableAbilityPoints += levelDifference * bonusPoints;
+                OnAbilityPointsChanged?.Invoke(availableAbilityPoints);
+            }
+            
+            UpdateDisplay();
+            UpdateAbilityStates();
+            
+            Debug.Log($"[AbilityEvolutionUI] Player level set to {level}, {availableAbilityPoints} points available");
+        }
+        
+        /// <summary>
+        /// Add ability points directly
+        /// </summary>
+        /// <param name="points">Points to add</param>
+        public void AddAbilityPoints(int points)
+        {
+            availableAbilityPoints += points;
+            OnAbilityPointsChanged?.Invoke(availableAbilityPoints);
+            
+            UpdateDisplay();
+            UpdateAbilityStates();
+        }
+        
+        /// <summary>
+        /// Get current ability level
+        /// </summary>
+        /// <param name="abilityId">Ability identifier</param>
+        /// <returns>Current level of the ability</returns>
+        public int GetAbilityLevel(string abilityId)
+        {
+            return abilityLevels.ContainsKey(abilityId) ? abilityLevels[abilityId] : 0;
+        }
+        
+        /// <summary>
+        /// Check if menu is currently open
+        /// </summary>
+        public bool IsMenuOpen => isMenuOpen;
+        
+        /// <summary>
+        /// Get available ability points
+        /// </summary>
+        public int AvailablePoints => availableAbilityPoints;
+        
+        /// <summary>
+        /// Get current player level
+        /// </summary>
+        public int PlayerLevel => playerLevel;
+        
+        #endregion
+    }
+}

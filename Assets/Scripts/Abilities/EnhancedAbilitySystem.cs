@@ -716,6 +716,163 @@ namespace MOBA.Abilities
                 subsystem: nameof(EnhancedAbilitySystem),
                 actor: gameObject?.name);
         }
+
+        #endregion
+
+        #region Pokemon Unite Evolution Support
+
+        /// <summary>
+        /// Modify ability damage for evolution upgrades
+        /// </summary>
+        public void ModifyAbilityDamage(int abilityIndex, float multiplier)
+        {
+            if (!IsValidAbilityIndex(abilityIndex)) return;
+
+            var ability = abilities[abilityIndex];
+            ability.damage *= (1f + multiplier);
+
+            if (logSystemEvents)
+            {
+                GameDebug.Log(
+                    BuildContext(GameDebugMechanicTag.General),
+                    "Ability damage modified by evolution.",
+                    ("AbilityIndex", abilityIndex),
+                    ("Multiplier", multiplier),
+                    ("NewDamage", ability.damage));
+            }
+        }
+
+        /// <summary>
+        /// Modify ability cooldown for evolution upgrades
+        /// </summary>
+        public void ModifyAbilityCooldown(int abilityIndex, float multiplier)
+        {
+            if (!IsValidAbilityIndex(abilityIndex)) return;
+
+            var ability = abilities[abilityIndex];
+            ability.cooldown *= (1f + multiplier);
+            ability.cooldown = Mathf.Max(0.1f, ability.cooldown); // Minimum cooldown
+
+            if (logSystemEvents)
+            {
+                GameDebug.Log(
+                    BuildContext(GameDebugMechanicTag.General),
+                    "Ability cooldown modified by evolution.",
+                    ("AbilityIndex", abilityIndex),
+                    ("Multiplier", multiplier),
+                    ("NewCooldown", ability.cooldown));
+            }
+        }
+
+        /// <summary>
+        /// Modify ability range for evolution upgrades
+        /// </summary>
+        public void ModifyAbilityRange(int abilityIndex, float multiplier)
+        {
+            if (!IsValidAbilityIndex(abilityIndex)) return;
+
+            var ability = abilities[abilityIndex];
+            ability.range *= (1f + multiplier);
+
+            if (logSystemEvents)
+            {
+                GameDebug.Log(
+                    BuildContext(GameDebugMechanicTag.General),
+                    "Ability range modified by evolution.",
+                    ("AbilityIndex", abilityIndex),
+                    ("Multiplier", multiplier),
+                    ("NewRange", ability.range));
+            }
+        }
+
+        /// <summary>
+        /// Modify ability duration for evolution upgrades
+        /// </summary>
+        public void ModifyAbilityDuration(int abilityIndex, float multiplier)
+        {
+            if (!IsValidAbilityIndex(abilityIndex)) return;
+
+            var ability = abilities[abilityIndex];
+            // Duration could be stored in a custom field or effect duration
+            // For now, we'll modify cast time as a placeholder
+            ability.castTime *= (1f + multiplier);
+
+            if (logSystemEvents)
+            {
+                GameDebug.Log(
+                    BuildContext(GameDebugMechanicTag.General),
+                    "Ability duration modified by evolution.",
+                    ("AbilityIndex", abilityIndex),
+                    ("Multiplier", multiplier),
+                    ("NewDuration", ability.castTime));
+            }
+        }
+
+        /// <summary>
+        /// Add new effect to ability through evolution
+        /// </summary>
+        public void AddAbilityEffect(int abilityIndex, string effectName)
+        {
+            if (!IsValidAbilityIndex(abilityIndex)) return;
+
+            // In a full implementation, this would add new effects to the ability
+            // For now, we'll log the addition and modify some properties based on effect name
+            var ability = abilities[abilityIndex];
+
+            switch (effectName)
+            {
+                case "DamageReflection":
+                    ability.effectColor = Color.red; // Visual indicator
+                    if (logSystemEvents)
+                    {
+                        GameDebug.Log(
+                            BuildContext(GameDebugMechanicTag.General),
+                            "Added damage reflection effect to ability.",
+                            ("AbilityIndex", abilityIndex));
+                    }
+                    break;
+                case "LifeSteal":
+                    ability.effectColor = Color.green; // Visual indicator
+                    if (logSystemEvents)
+                    {
+                        GameDebug.Log(
+                            BuildContext(GameDebugMechanicTag.General),
+                            "Added life steal effect to ability.",
+                            ("AbilityIndex", abilityIndex));
+                    }
+                    break;
+                case "AreaOfEffect":
+                    ability.abilityType = AbilityType.Area;
+                    ability.maxTargets *= 2; // Double target count
+                    if (logSystemEvents)
+                    {
+                        GameDebug.Log(
+                            BuildContext(GameDebugMechanicTag.General),
+                            "Added area of effect to ability.",
+                            ("AbilityIndex", abilityIndex),
+                            ("NewMaxTargets", ability.maxTargets));
+                    }
+                    break;
+                default:
+                    if (logSystemEvents)
+                    {
+                        GameDebug.Log(
+                            BuildContext(GameDebugMechanicTag.General),
+                            "Added custom effect to ability.",
+                            ("AbilityIndex", abilityIndex),
+                            ("EffectName", effectName));
+                    }
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Validate ability index is within valid range and ability exists
+        /// </summary>
+        private bool IsValidAbilityIndex(int index)
+        {
+            return index >= 0 && index < abilities.Length && abilities[index] != null;
+        }
         
         #endregion
     }

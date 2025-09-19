@@ -1,7 +1,45 @@
 # MOBA Project Documentation
 
 ## 1. Overview
-This repository contains a lightweight multiplayer-online-battle-arena (MOBA) prototype built on Unity's modern runtime stack. The codebase embraces the newest Input System, Netcode for GameObjects, and modular runtime systems that decouple gameplay, networking, and diagnostics. This document explains how the major systems interact, how to bootstrap a match instantly, and where to extend gameplay for production use.
+This r## 9. Input Integration & Control System
+
+### Modern Input Architecture
+- **Unity Input System**: Global adoption across all player and ability systems
+- **Dual Input Support**: New Input System with legacy input fallback for compatibility
+- **Smart Input Management**: Systems auto-detect conflicts and disable duplicate listeners
+
+### Player Control Mapping
+- **Movement**: WASD + mouse aim for 3D character control
+- **Combat Actions**:
+  - **Primary Attack (LMB)**: Smart targeting - enemy players → NPCs → no attack
+  - **NPC Attack (RMB)**: NPC-focused - NPCs → enemy players → no attack
+  - **Attack Rate Limiting**: Both respect character attack speed statistics
+- **Abilities**:
+  - **Ability 1 (Q)**: First basic ability
+  - **Ability 2 (E)**: Second basic ability
+  - **Ultimate (G)**: Character signature ability
+  - **Input Buffering**: 0.1-second buffer window for responsive casting
+
+### Advanced Input Features
+- **Jump System**: 
+  - **Tap (Space)**: Quick single jump
+  - **Hold (Space)**: Variable height based on hold duration
+- **Ability Evolution**: Pokemon Unite-style upgrade paths
+  - **Path A (1 key)**: Select first upgrade branch when leveling
+  - **Path B (2 key)**: Select second upgrade branch when leveling
+- **Communication**: 
+  - **Ping Wheel**: Quick team communication with predefined callouts
+  - **Implementation**: Code framework complete (`ChatPingSystem.cs`), UI pending
+- **Utility Actions**:
+  - **Item Use (C)**: Activate consumable items
+  - **Home (Ctrl, hold 1.5s)**: Return to base/respawn point
+  - **Interact/Score (Alt)**: Deposit orbs at scoring zones
+
+### Input System Integration
+- **Component Compatibility**: `SimplePlayerController`, `EnhancedAbilitySystem`, `SimpleAbilitySystem`, and `SimpleInputHandler` all consume `InputActionAsset`/`InputActionReference` instances
+- **Input State Management**: Suppress input during death/respawn with `SetInputEnabled(false)`
+- **Conflict Resolution**: Enhanced system auto-disables internal bindings when legacy handlers detected via `enableInternalInputActions` toggle
+- **Control Schemes**: Full support for Keyboard+Mouse, Gamepad, Touch, Joystick, and XR/VRtory contains a lightweight multiplayer-online-battle-arena (MOBA) prototype built on Unity's modern runtime stack. The codebase embraces the newest Input System, Netcode for GameObjects, and modular runtime systems that decouple gameplay, networking, and diagnostics. This document explains how the major systems interact, how to bootstrap a match instantly, and where to extend gameplay for production use.
 
 > **Key namespaces**
 > - `MOBA` – gameplay controllers, pooling, core infrastructure

@@ -55,16 +55,12 @@ namespace MOBA.Networking
         // Network state tracking
         private NetworkConnectionState connectionState = NetworkConnectionState.Disconnected;
         
-        // Player management
-        private Dictionary<ulong, PlayerNetworkData> connectedPlayers = new Dictionary<ulong, PlayerNetworkData>();
-        private int currentPlayerCount = 0;
-        private readonly Dictionary<ulong, NetworkObject> playerAvatars = new Dictionary<ulong, NetworkObject>();
-        
         // Network Manager Components
         private NetworkConnectionManager connectionManager;
         private NetworkAntiCheatManager antiCheatManager;
         private NetworkStatisticsManager statisticsManager;
         private NetworkReconnectionManager reconnectionManager;
+        private NetworkPlayerManager playerManager;
         
         #endregion
         
@@ -173,6 +169,7 @@ namespace MOBA.Networking
             connectionManager?.Shutdown();
             antiCheatManager?.Shutdown();
             statisticsManager?.Shutdown();
+            playerManager?.Shutdown();
             reconnectionManager?.Shutdown();
 
             // Unsubscribe from NetworkManager events
@@ -252,6 +249,13 @@ namespace MOBA.Networking
             // Subscribe to ping updates from statistics manager
             statisticsManager.OnPingUpdated += (ping) => OnPingUpdated?.Invoke(ping);
             
+            // Initialize player manager
+            playerManager = gameObject.AddComponent<NetworkPlayerManager>();
+            playerManager.Initialize(this);
+            // Subscribe to player events
+            playerManager.OnPlayerConnected += (clientId) => OnPlayerConnected?.Invoke(clientId);
+            playerManager.OnPlayerDisconnected += (clientId) => OnPlayerDisconnected?.Invoke(clientId);
+            
             // Initialize reconnection manager
             reconnectionManager = gameObject.AddComponent<NetworkReconnectionManager>();
             reconnectionManager.Initialize(this);
@@ -310,7 +314,7 @@ namespace MOBA.Networking
         private void OnServerStarted()
         {
             SetConnectionState(NetworkConnectionState.Connected);
-            currentPlayerCount = 1; // Host counts as a player
+            // Note: Host player count is managed by playerManager
             
             if (logNetworkEvents)
             {
@@ -333,71 +337,27 @@ namespace MOBA.Networking
         
         private void OnClientConnected(ulong clientId)
         {
-            // Edge case: duplicate connection
-            if (connectedPlayers.ContainsKey(clientId))
-            {
-                HandleConnectionWarning($"Duplicate connection detected for client {clientId}. Rejecting duplicate.");
-                return;
-            }
-
-            var playerData = new PlayerNetworkData
-            {
-                ClientId = clientId,
-                ConnectedTime = Time.time,
-                IsActive = true
-            };
-
-            connectedPlayers[clientId] = playerData;
-            currentPlayerCount = connectedPlayers.Count;
-
+            // Delegate player connection handling to the player manager
+            playerManager?.HandlePlayerConnected(clientId);
+            
             // Add player to statistics tracking
-            statisticsManager?.AddConnectedPlayer(clientId, playerData);
+            if (playerManager?.GetPlayerData(clientId) is var playerData && playerData != null)
+            {
+                statisticsManager?.AddConnectedPlayer(clientId, playerData);
+            }
             
             // Start tracking player for anti-cheat
             antiCheatManager?.StartTrackingPlayer(clientId, Vector3.zero);
-
-            OnPlayerConnected?.Invoke(clientId);
-
-            if (logNetworkEvents)
-            {
-                GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, actorClientId: clientId),
-                    "Player connected to session.",
-                    ("ConnectedPlayers", currentPlayerCount));
-            }
-
-            // Publish network event
-            if (NetworkManager.Singleton.IsServer)
-            {
-                UnifiedEventSystem.PublishNetwork<PlayerConnectedEvent>(new PlayerConnectedEvent(clientId, Time.time));
-            }
         }
         
         private void OnClientDisconnected(ulong clientId)
         {
-            if (connectedPlayers.ContainsKey(clientId))
-            {
-                connectedPlayers.Remove(clientId);
-                currentPlayerCount = connectedPlayers.Count;
-                
-                // Remove player from tracking systems
-                statisticsManager?.RemoveConnectedPlayer(clientId);
-                antiCheatManager?.StopTrackingPlayer(clientId);
-                
-                OnPlayerDisconnected?.Invoke(clientId);
-                
-                if (logNetworkEvents)
-                {
-                    GameDebug.Log(BuildContext(GameDebugMechanicTag.Networking, actorClientId: clientId),
-                        "Player disconnected from session.",
-                        ("ConnectedPlayers", currentPlayerCount));
-                }
-                        
-                // Publish network event
-                if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
-                {
-                    UnifiedEventSystem.PublishNetwork<PlayerDisconnectedEvent>(new PlayerDisconnectedEvent(clientId, Time.time));
-                }
-            }
+            // Delegate player disconnection handling to the player manager
+            playerManager?.HandlePlayerDisconnected(clientId);
+            
+            // Remove player from tracking systems
+            statisticsManager?.RemoveConnectedPlayer(clientId);
+            antiCheatManager?.StopTrackingPlayer(clientId);
             
             // Handle self disconnection - delegate to reconnection manager
             if (clientId == NetworkManager.Singleton.LocalClientId && reconnectionManager != null)
@@ -413,7 +373,9 @@ namespace MOBA.Networking
         
         private void PerformAntiCheatChecks()
         {
-            foreach (var kvp in connectedPlayers)
+            if (playerManager?.ConnectedPlayers == null) return;
+            
+            foreach (var kvp in playerManager.ConnectedPlayers)
             {
                 var player = kvp.Value;
                 if (!player.IsActive)
@@ -507,7 +469,7 @@ namespace MOBA.Networking
         #region Public Interface
         
         public NetworkConnectionState GetConnectionState() => connectionState;
-        public int GetPlayerCount() => currentPlayerCount;
+        public int GetPlayerCount() => playerManager?.CurrentPlayerCount ?? 0;
         public float GetCurrentPing() => statisticsManager?.GetCurrentPing() ?? 0f;
         public NetworkStats GetNetworkStats() => statisticsManager?.GetNetworkStats() ?? new NetworkStats();
         public bool IsHost() => NetworkManager.Singleton != null && NetworkManager.Singleton.IsHost;
@@ -517,75 +479,20 @@ namespace MOBA.Networking
         /// <summary>
         /// Spawns player avatar prefabs for all connected clients at specified spawn points.
         /// Server-only method that handles NetworkObject spawning and assignment.
+        /// Delegates to NetworkPlayerManager for implementation.
         /// </summary>
         public void SpawnPlayerAvatars(GameObject playerPrefab, Transform[] spawnPoints)
         {
-            if (!IsServer() || NetworkManager.Singleton == null)
-            {
-                return;
-            }
-
-            if (playerPrefab == null)
-            {
-                GameDebug.LogError(BuildContext(GameDebugMechanicTag.Spawning),
-                    "Cannot spawn player avatars; player prefab is null.");
-                return;
-            }
-
-            var clientIds = NetworkManager.Singleton.ConnectedClientsIds;
-            int spawnCount = spawnPoints != null ? spawnPoints.Length : 0;
-            int spawnIndex = 0;
-
-            foreach (var clientId in clientIds)
-            {
-                if (!connectedPlayers.TryGetValue(clientId, out var playerData))
-                {
-                    continue;
-                }
-
-                if (playerAvatars.TryGetValue(clientId, out var existingAvatar) && existingAvatar != null && existingAvatar.IsSpawned)
-                {
-                    spawnIndex++;
-                    continue;
-                }
-
-                var spawnTransform = ResolveSpawnTransform(spawnPoints, spawnCount, spawnIndex);
-                Vector3 position = spawnTransform != null ? spawnTransform.position : Vector3.zero;
-                Quaternion rotation = spawnTransform != null ? spawnTransform.rotation : Quaternion.identity;
-
-                var instance = Instantiate(playerPrefab, position, rotation);
-                var networkObject = instance.GetComponent<NetworkObject>();
-                if (networkObject == null)
-                {
-                    GameDebug.LogError(BuildContext(GameDebugMechanicTag.Spawning),
-                        "Player prefab missing NetworkObject component.",
-                        ("Prefab", playerPrefab.name));
-                    Destroy(instance);
-                    continue;
-                }
-
-                networkObject.SpawnAsPlayerObject(clientId, true);
-                playerAvatars[clientId] = networkObject;
-                playerData.Avatar = networkObject;
-                spawnIndex++;
-            }
+            playerManager?.SpawnPlayerAvatars(playerPrefab, spawnPoints);
         }
 
         /// <summary>
         /// Despawns and destroys all player avatars from the network session.
+        /// Delegates to NetworkPlayerManager for implementation.
         /// </summary>
         public void DespawnAllPlayerAvatars()
         {
-            if (!IsServer() || NetworkManager.Singleton == null)
-            {
-                return;
-            }
-
-            var keys = new List<ulong>(playerAvatars.Keys);
-            foreach (var clientId in keys)
-            {
-                DespawnPlayerAvatar(clientId);
-            }
+            playerManager?.DespawnAllPlayerAvatars();
         }
 
         /// <summary>
@@ -614,26 +521,6 @@ namespace MOBA.Networking
                         "Player kicked from session.",
                         ("Reason", reason));
                 }
-            }
-        }
-
-        private void DespawnPlayerAvatar(ulong clientId)
-        {
-            if (playerAvatars.TryGetValue(clientId, out var avatar) && avatar != null)
-            {
-                if (avatar.IsSpawned)
-                {
-                    avatar.Despawn(true);
-                }
-
-                Destroy(avatar.gameObject);
-            }
-
-            playerAvatars.Remove(clientId);
-
-            if (connectedPlayers.TryGetValue(clientId, out var data))
-            {
-                data.Avatar = null;
             }
         }
 

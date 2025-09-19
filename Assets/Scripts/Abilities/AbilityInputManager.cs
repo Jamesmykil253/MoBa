@@ -18,7 +18,7 @@ namespace MOBA.Abilities
         private InputActionAsset inputActions;
         
         [SerializeField, Tooltip("Default key bindings for abilities")]
-        private KeyCode[] defaultAbilityKeys = { KeyCode.Q, KeyCode.W, KeyCode.E, KeyCode.R };
+        private KeyCode[] defaultAbilityKeys = { KeyCode.Q, KeyCode.E, KeyCode.G, KeyCode.R };
         
         [SerializeField, Tooltip("Enable input buffering for better responsiveness")]
         private bool enableInputBuffering = true;

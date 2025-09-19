@@ -140,15 +140,6 @@
                     "processors": "",
                     "interactions": "",
                     "initialStateCheck": false
-                },
-                {
-                    "name": "Ability4",
-                    "type": "Button",
-                    "id": "d2e68bf7-0764-4339-90f7-916702f1924b",
-                    "expectedControlType": "",
-                    "processors": "",
-                    "interactions": "Tap,Hold",
-                    "initialStateCheck": false
                 }
             ],
             "bindings": [
@@ -666,17 +657,6 @@
                     "processors": "",
                     "groups": "Keyboard&Mouse",
                     "action": "8739c9a9-13ae-4a12-a2aa-219d498039b0",
-                    "isComposite": false,
-                    "isPartOfComposite": false
-                },
-                {
-                    "name": "",
-                    "id": "9abf62e0-2207-49e1-b409-eb3f1afd7d8f",
-                    "path": "<Keyboard>/r",
-                    "interactions": "",
-                    "processors": "",
-                    "groups": "Keyboard&Mouse",
-                    "action": "d2e68bf7-0764-4339-90f7-916702f1924b",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }

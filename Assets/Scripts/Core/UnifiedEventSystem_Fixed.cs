@@ -525,6 +525,8 @@ namespace MOBA
 
 	// Example event types (add more as needed)
 
+	// Movement events are defined in MOBA.Movement.MovementEvents
+
 	// Ability used event (local)
 	public class AbilityUsedEvent : ILocalEvent
 	{

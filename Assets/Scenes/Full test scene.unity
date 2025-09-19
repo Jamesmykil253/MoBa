@@ -653,6 +653,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 512233445566778899, guid: 81d967c40edd34892b09c952de473718, type: 3}
+      propertyPath: GlobalObjectIdHash
+      value: 1938389616
+      objectReference: {fileID: 0}
     - target: {fileID: 1418226379301507401, guid: 81d967c40edd34892b09c952de473718, type: 3}
       propertyPath: m_Name
       value: Enemy
@@ -725,6 +729,10 @@ PrefabInstance:
     - target: {fileID: 260191833228280988, guid: 2921c604e6c844400bea8ff693cef0a8, type: 3}
       propertyPath: m_Name
       value: Player
+      objectReference: {fileID: 0}
+    - target: {fileID: 913245678901234567, guid: 2921c604e6c844400bea8ff693cef0a8, type: 3}
+      propertyPath: GlobalObjectIdHash
+      value: 2434169255
       objectReference: {fileID: 0}
     - target: {fileID: 2112330725022472140, guid: 2921c604e6c844400bea8ff693cef0a8, type: 3}
       propertyPath: m_Camera

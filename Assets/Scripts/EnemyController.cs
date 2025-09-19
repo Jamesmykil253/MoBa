@@ -38,7 +38,8 @@ namespace MOBA
         [Header("Rewards")]
         [SerializeField] private GameObject coinPrefab;
         [SerializeField] private Transform coinSpawnPoint;
-        [SerializeField] private int coinScoreValue = 10;
+        [SerializeField] private int enemyLevel = 5;
+        [SerializeField] private NPCType npcType = NPCType.WildPokemon;
         [SerializeField] private float coinLaunchForce = 2f;
 
         // Component references
@@ -415,22 +416,61 @@ namespace MOBA
             }
 
             Vector3 spawnPosition = coinSpawnPoint != null ? coinSpawnPoint.position : transform.position + Vector3.up * 0.5f;
-            var coinInstance = Instantiate(coinPrefab, spawnPosition, Quaternion.identity);
-
-            if (coinInstance.TryGetComponent<Rigidbody>(out var coinRb))
+            
+            // Find Pokemon Unite coin system in scene
+            var coinSystem = FindFirstObjectByType<PokemonUniteCoinSystem>();
+            if (coinSystem != null)
             {
-                Vector3 launchDirection = Vector3.up + Random.insideUnitSphere * 0.25f;
-                coinRb.AddForce(launchDirection.normalized * Mathf.Max(0f, coinLaunchForce), ForceMode.Impulse);
+                coinSystem.DropCoins(spawnPosition, enemyLevel, npcType);
             }
-
-            if (coinInstance.TryGetComponent<CoinPickup>(out var coinPickup))
+            else
             {
-                coinPickup.Initialize(Mathf.Max(1, coinScoreValue));
+                // Fallback: Use legacy coin drop with configured launch force
+                DropLegacyCoins(spawnPosition);
             }
 
             Log(GameDebugMechanicTag.Score,
-                "Dropped coin reward.",
-                ("ScoreValue", coinScoreValue));
+                "Dropped Pokemon Unite coins.",
+                ("EnemyLevel", enemyLevel),
+                ("NPCType", npcType));
+        }
+
+        /// <summary>
+        /// Legacy coin drop system using coinLaunchForce field
+        /// Used as fallback when PokemonUniteCoinSystem is not available
+        /// </summary>
+        private void DropLegacyCoins(Vector3 spawnPosition)
+        {
+            if (coinPrefab == null) return;
+
+            // Calculate coins based on level and type
+            int coinValue = enemyLevel * 2;
+            if (npcType == NPCType.BossPokemon) coinValue *= 3;
+            if (npcType == NPCType.ElitePokemon) coinValue = Mathf.RoundToInt(coinValue * 1.5f);
+
+            // Drop 2-4 coins with scatter
+            int coinCount = Random.Range(2, 5);
+            for (int i = 0; i < coinCount; i++)
+            {
+                Vector3 randomOffset = Random.insideUnitCircle * 1.5f;
+                Vector3 coinPos = spawnPosition + new Vector3(randomOffset.x, 0.5f, randomOffset.y);
+                
+                var coin = Instantiate(coinPrefab, coinPos, Quaternion.identity, transform.root);
+                
+                // Apply launch force
+                if (coin.TryGetComponent<Rigidbody>(out var rb))
+                {
+                    Vector3 launchDir = Vector3.up + new Vector3(randomOffset.x, 0f, randomOffset.y).normalized * 0.3f;
+                    rb.AddForce(launchDir * coinLaunchForce, ForceMode.Impulse);
+                }
+
+                // Initialize coin value
+                int thisCoinValue = coinValue / coinCount + (i < coinValue % coinCount ? 1 : 0);
+                if (coin.TryGetComponent<CoinPickup>(out var coinPickup))
+                {
+                    coinPickup.Initialize(thisCoinValue);
+                }
+            }
         }
 
         private void CreateDeathEffect()
