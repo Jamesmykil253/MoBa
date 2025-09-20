@@ -429,7 +429,68 @@ namespace MOBA
         public void OnAbilityQ(InputAction.CallbackContext context) { /* Handled by EnhancedAbilitySystem */ }
         public void OnAbilityE(InputAction.CallbackContext context) { /* Handled by EnhancedAbilitySystem */ }
         public void OnAbilityG(InputAction.CallbackContext context) { /* Handled by EnhancedAbilitySystem */ }
+
+        // Modern Input System Ability Handlers (required by InputSystem_Actions.cs)
+        private float lastAbility1Time = 0f;
+        private float lastAbility2Time = 0f;
+        private float lastAbility3Time = 0f;
+        private const float ABILITY_INPUT_DEBOUNCE = 0.1f; // Prevent rapid-fire input
+        
+        public void OnAbility1(InputAction.CallbackContext context)
+        {
+            if (context.performed && Time.time - lastAbility1Time > ABILITY_INPUT_DEBOUNCE)
+            {
+                lastAbility1Time = Time.time;
+                // Forward to Enhanced Ability System
+                var abilitySystem = GetComponent<EnhancedAbilitySystem>();
+                if (abilitySystem != null)
+                {
+                    abilitySystem.TryCastAbility(0); // Ability index 0
+                }
+            }
+        }
+
+        public void OnAbility2(InputAction.CallbackContext context)
+        {
+            if (context.performed && Time.time - lastAbility2Time > ABILITY_INPUT_DEBOUNCE)
+            {
+                lastAbility2Time = Time.time;
+                // Forward to Enhanced Ability System
+                var abilitySystem = GetComponent<EnhancedAbilitySystem>();
+                if (abilitySystem != null)
+                {
+                    abilitySystem.TryCastAbility(1); // Ability index 1
+                }
+            }
+        }
+
+        public void OnAbility3(InputAction.CallbackContext context)
+        {
+            if (context.performed && Time.time - lastAbility3Time > ABILITY_INPUT_DEBOUNCE)
+            {
+                lastAbility3Time = Time.time;
+                // Forward to Enhanced Ability System
+                var abilitySystem = GetComponent<EnhancedAbilitySystem>();
+                if (abilitySystem != null)
+                {
+                    abilitySystem.TryCastAbility(2); // Ability index 2
+                }
+            }
+        }
+
+        #region General Input Handlers
+
+        // General Action Input Handlers
+        public void OnAim(InputAction.CallbackContext context) { }
+        public void OnAttack(InputAction.CallbackContext context) { }
+        public void OnAttackNPC(InputAction.CallbackContext context) { }
+        public void OnCancel(InputAction.CallbackContext context) { }
+        public void OnScore(InputAction.CallbackContext context) { }
+        public void OnItem(InputAction.CallbackContext context) { }
+        public void OnHome(InputAction.CallbackContext context) { }
         public void OnChat(InputAction.CallbackContext context) { /* Handled by ChatPingSystem */ }
+
+        #endregion
 
         #region IEvolutionInputHandler Implementation
 

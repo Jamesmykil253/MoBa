@@ -742,6 +742,10 @@ PrefabInstance:
       propertyPath: m_UIInputModule
       value: 
       objectReference: {fileID: 0}
+    - target: {fileID: 6905912111739033647, guid: 2921c604e6c844400bea8ff693cef0a8, type: 3}
+      propertyPath: m_ActionsAsset
+      value: 
+      objectReference: {fileID: 0}
     - target: {fileID: 7586785443326932905, guid: 2921c604e6c844400bea8ff693cef0a8, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0

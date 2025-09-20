@@ -21,7 +21,7 @@ namespace MOBA.Abilities
         private KeyCode[] defaultAbilityKeys = { KeyCode.Q, KeyCode.E, KeyCode.G, KeyCode.R };
         
         [SerializeField, Tooltip("Enable input buffering for better responsiveness")]
-        private bool enableInputBuffering = true;
+        private bool enableInputBuffering = false;
         
         [SerializeField, Tooltip("Input buffer window in seconds")]
         private float inputBufferWindow = 0.1f;
@@ -290,13 +290,10 @@ namespace MOBA.Abilities
         /// </summary>
         private void ProcessLegacyInput()
         {
-            foreach (var kvp in keyToAbilityMap)
-            {
-                if (Input.GetKeyDown(kvp.Key))
-                {
-                    OnAbilityInput(kvp.Value);
-                }
-            }
+            // Legacy input disabled when using Unity Input System
+            // Input is handled through Unity Input System callbacks (OnAbility1/2/3)
+            // This prevents double input processing and spam
+            return;
         }
         
         /// <summary>
@@ -306,8 +303,11 @@ namespace MOBA.Abilities
         {
             float currentTime = Time.time;
             
-            // Process buffered inputs
-            while (inputBuffer.Count > 0)
+            // Process buffered inputs (limited processing to prevent spam)
+            int processedCount = 0;
+            const int maxProcessPerFrame = 1; // Limit to prevent spam
+            
+            while (inputBuffer.Count > 0 && processedCount < maxProcessPerFrame)
             {
                 var bufferedInput = inputBuffer.Peek();
                 
@@ -322,10 +322,16 @@ namespace MOBA.Abilities
                 if (TryExecuteBufferedInput(bufferedInput))
                 {
                     inputBuffer.Dequeue();
+                    processedCount++;
                 }
                 else
                 {
-                    // Can't execute yet, try again next frame
+                    // Can't execute yet, only try again if not on cooldown
+                    // If on cooldown, remove from buffer to prevent spam
+                    if (cooldownManager != null && !cooldownManager.IsAbilityReady(bufferedInput.AbilityIndex))
+                    {
+                        inputBuffer.Dequeue();
+                    }
                     break;
                 }
             }
