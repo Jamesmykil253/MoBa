@@ -153,12 +153,14 @@ namespace MOBA.Combat
         
         private void OnEnable()
         {
-            SetupInputActions();
+            // Input is now handled by SimplePlayerController via BroadcastMessages
+            // SetupInputActions();
         }
         
         private void OnDisable()
         {
-            TeardownInputActions();
+            // Input cleanup is now handled by SimplePlayerController
+            // TeardownInputActions();
         }
         
         private void Update()
@@ -241,10 +243,10 @@ namespace MOBA.Combat
         #region Input Callbacks
         
         /// <summary>
-        /// Handle primary attack input (LMB)
+        /// Handle primary attack input (Enemy players and other players)
         /// Priority: Enemy players → NPCs
         /// </summary>
-        private void OnPrimaryAttackPerformed(InputAction.CallbackContext context)
+        public void OnPrimaryAttackPerformed(InputAction.CallbackContext context)
         {
             if (!CanAttack())
             {
@@ -266,7 +268,7 @@ namespace MOBA.Combat
         /// <summary>
         /// Handle primary attack release
         /// </summary>
-        private void OnPrimaryAttackCanceled(InputAction.CallbackContext context)
+        public void OnPrimaryAttackCanceled(InputAction.CallbackContext context)
         {
             primaryAttackHeld = false;
             StopAutoAttack();
@@ -275,10 +277,10 @@ namespace MOBA.Combat
         }
         
         /// <summary>
-        /// Handle NPC attack input (RMB)
-        /// Priority: NPCs → Enemy players
+        /// Handle NPC-specific attack input
+        /// Targets only NPCs/monsters for farming
         /// </summary>
-        private void OnNPCAttackPerformed(InputAction.CallbackContext context)
+        public void OnNPCAttackPerformed(InputAction.CallbackContext context)
         {
             if (!CanAttack())
             {
@@ -300,7 +302,7 @@ namespace MOBA.Combat
         /// <summary>
         /// Handle NPC attack release
         /// </summary>
-        private void OnNPCAttackCanceled(InputAction.CallbackContext context)
+        public void OnNPCAttackCanceled(InputAction.CallbackContext context)
         {
             npcAttackHeld = false;
             StopAutoAttack();

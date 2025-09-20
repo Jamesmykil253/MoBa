@@ -98,22 +98,28 @@ namespace MOBA.UI
         
         void OnEnable()
         {
+            // Input is now handled by SimplePlayerController via BroadcastMessages
+            /*
             if (chatAction != null)
             {
                 chatAction.performed += OnChatInputPerformed;
                 chatAction.canceled += OnChatInputCanceled;
                 chatAction.Enable();
             }
+            */
         }
         
         void OnDisable()
         {
+            // Input cleanup is now handled by SimplePlayerController
+            /*
             if (chatAction != null)
             {
                 chatAction.performed -= OnChatInputPerformed;
                 chatAction.canceled -= OnChatInputCanceled;
                 chatAction.Disable();
             }
+            */
         }
         
         void Update()
@@ -153,9 +159,9 @@ namespace MOBA.UI
         }
         
         /// <summary>
-        /// Handle chat input press - opens ping wheel
+        /// Handle chat input started
         /// </summary>
-        private void OnChatInputPerformed(InputAction.CallbackContext context)
+        public void OnChatInputPerformed(InputAction.CallbackContext context)
         {
             if (!isPingWheelOpen)
             {
@@ -166,7 +172,7 @@ namespace MOBA.UI
         /// <summary>
         /// Handle chat input release - closes ping wheel and sends selected ping
         /// </summary>
-        private void OnChatInputCanceled(InputAction.CallbackContext context)
+        public void OnChatInputCanceled(InputAction.CallbackContext context)
         {
             if (isPingWheelOpen)
             {

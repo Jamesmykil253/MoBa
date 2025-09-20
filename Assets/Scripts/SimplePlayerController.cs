@@ -4,25 +4,23 @@ using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using MOBA.Abilities;
+using MOBA.Combat;
+using MOBA.UI;
 
 namespace MOBA
 {
     /// <summary>
-    /// Player controller that composes the unified movement and ability systems for AAA-ready modularity.
+    /// Modernized player controller using the unified movement and ability systems.
+    /// Implements clean Input System integration with proper callback handling.
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
     [RequireComponent(typeof(PlayerInput))]
-    public class SimplePlayerController : MonoBehaviour, IDamageable, IDamageSnapshotReceiver, IEvolutionInputHandler
+    [DefaultExecutionOrder(-100)] // Execute before other components that depend on PlayerInput
+        public class SimplePlayerController : MonoBehaviour, IDamageable, IDamageSnapshotReceiver, IEvolutionInputHandler
     {
         [Header("Movement")]
         [SerializeField] private UnifiedMovementSystem movementSystem = new UnifiedMovementSystem();
         [SerializeField] private float rotationResponsiveness = 14f;
-
-        [Header("Input Actions")]
-        [SerializeField] private InputActionReference moveActionReference;
-        [SerializeField] private InputActionReference jumpActionReference;
-        [SerializeField] private string fallbackMoveAction = "Move";
-        [SerializeField] private string fallbackJumpAction = "Jump";
 
         [Header("Health & Respawn")]
         [SerializeField] private float maxHealth = 100f;
@@ -45,8 +43,6 @@ namespace MOBA
         private EnhancedAbilitySystem enhancedAbilitySystem;
         private AbilityEvolutionHandler evolutionHandler;
 
-        private InputAction moveAction;
-        private InputAction jumpAction;
         private Vector2 moveInput;
         private Vector3 desiredLook = Vector3.forward;
         private Vector3 defaultLookDirection = Vector3.forward;
@@ -76,6 +72,38 @@ namespace MOBA
             enhancedAbilitySystem = GetComponent<EnhancedAbilitySystem>();
             evolutionHandler = GetComponent<AbilityEvolutionHandler>();
 
+            // Configure PlayerInput to use BroadcastMessage behavior
+            if (playerInput != null)
+            {
+                playerInput.notificationBehavior = PlayerNotifications.BroadcastMessages;
+                
+                // Critical diagnostic logging
+                if (playerInput.actions == null)
+                {
+                    Debug.LogError("[SimplePlayerController] CRITICAL: PlayerInput component has no actions asset assigned!");
+                    Debug.LogError("[SimplePlayerController] SOLUTION: In Unity Inspector, drag 'InputSystem_Actions' asset to the PlayerInput component's 'Actions' field");
+                }
+                else
+                {
+                    Debug.Log($"[SimplePlayerController] PlayerInput configured with actions: {playerInput.actions.name}");
+                    Debug.Log($"[SimplePlayerController] Notification Behavior: {playerInput.notificationBehavior}");
+                    
+                    // List all available actions for debugging
+                    foreach (var actionMap in playerInput.actions.actionMaps)
+                    {
+                        Debug.Log($"[SimplePlayerController] Action Map: {actionMap.name}");
+                        foreach (var action in actionMap.actions)
+                        {
+                            Debug.Log($"[SimplePlayerController] - Action: {action.name}");
+                        }
+                    }
+                }
+            }
+            else
+            {
+                Debug.LogError("[SimplePlayerController] No PlayerInput component found!");
+            }
+
             ConfigureRigidBody();
 
             initialSpawnPosition = transform.position;
@@ -92,13 +120,81 @@ namespace MOBA
 
         private void OnEnable()
         {
-            ResolveInputActions();
+            // Setup direct input action connections as fallback
+            if (playerInput?.actions != null)
+            {
+                var moveAction = playerInput.actions.FindAction("Move");
+                var jumpAction = playerInput.actions.FindAction("Jump");
+                var aimAction = playerInput.actions.FindAction("Aim");
+                
+                if (moveAction != null)
+                {
+                    moveAction.performed += OnMoveAction;
+                    moveAction.canceled += OnMoveAction;
+                    Debug.Log("[SimplePlayerController] Move action connected");
+                }
+                
+                if (jumpAction != null)
+                {
+                    jumpAction.started += OnJumpAction;
+                    jumpAction.canceled += OnJumpAction;
+                    Debug.Log("[SimplePlayerController] Jump action connected");
+                }
+                
+                if (aimAction != null)
+                {
+                    aimAction.performed += OnAimAction;
+                    aimAction.canceled += OnAimAction;
+                    Debug.Log("[SimplePlayerController] Aim action connected");
+                }
+            }
+            
             SetInputEnabled(true);
         }
 
         private void OnDisable()
         {
-            TeardownInputActions();
+            // Cleanup direct input action connections
+            if (playerInput?.actions != null)
+            {
+                var moveAction = playerInput.actions.FindAction("Move");
+                var jumpAction = playerInput.actions.FindAction("Jump");
+                var aimAction = playerInput.actions.FindAction("Aim");
+                
+                if (moveAction != null)
+                {
+                    moveAction.performed -= OnMoveAction;
+                    moveAction.canceled -= OnMoveAction;
+                }
+                
+                if (jumpAction != null)
+                {
+                    jumpAction.started -= OnJumpAction;
+                    jumpAction.canceled -= OnJumpAction;
+                }
+                
+                if (aimAction != null)
+                {
+                    aimAction.performed -= OnAimAction;
+                    aimAction.canceled -= OnAimAction;
+                }
+            }
+        }
+
+        // Direct action callback methods (fallback approach)
+        private void OnMoveAction(InputAction.CallbackContext context)
+        {
+            OnMove(context);
+        }
+        
+        private void OnJumpAction(InputAction.CallbackContext context)
+        {
+            OnJump(context);
+        }
+        
+        private void OnAimAction(InputAction.CallbackContext context)
+        {
+            OnAim(context);
         }
 
         private void Update()
@@ -109,11 +205,7 @@ namespace MOBA
                 return;
             }
 
-            if (moveAction != null)
-            {
-                moveInput = moveAction.ReadValue<Vector2>();
-            }
-
+            // Movement input is now handled via OnMove callback
             var moveVector = new Vector3(moveInput.x, 0f, moveInput.y);
             movementSystem.SetMovementInput(moveVector);
             UpdateDesiredOrientation(moveVector);
@@ -137,87 +229,11 @@ namespace MOBA
             teamIndex = Mathf.Max(0, newTeamIndex);
         }
 
-        private void ResolveInputActions()
-        {
-            if (playerInput == null)
-            {
-                return;
-            }
 
-            if (moveActionReference != null)
-            {
-                moveAction = moveActionReference.action;
-            }
-            else if (playerInput.actions != null)
-            {
-                moveAction = playerInput.actions.FindAction(fallbackMoveAction, throwIfNotFound: false);
-            }
 
-            if (jumpActionReference != null)
-            {
-                jumpAction = jumpActionReference.action;
-            }
-            else if (playerInput.actions != null)
-            {
-                jumpAction = playerInput.actions.FindAction(fallbackJumpAction, throwIfNotFound: false);
-            }
 
-            moveAction?.Enable();
 
-            if (jumpAction != null)
-            {
-                jumpAction.Enable();
-                jumpAction.started += OnJumpStarted;
-                jumpAction.canceled += OnJumpCanceled;
-            }
-        }
 
-        private void TeardownInputActions()
-        {
-            if (jumpAction != null)
-            {
-                jumpAction.started -= OnJumpStarted;
-                jumpAction.canceled -= OnJumpCanceled;
-                jumpAction.Disable();
-            }
-
-            moveAction?.Disable();
-        }
-
-        private void OnJumpStarted(InputAction.CallbackContext context)
-        {
-            if (!inputActive || isDead)
-            {
-                return;
-            }
-
-            var jumpResult = movementSystem.TryExecuteJump();
-
-            if (jumpResult == UnifiedMovementSystem.JumpExecutionResult.Initial)
-            {
-                jumpButtonHeld = true;
-                holdBoostCandidate = true;
-                holdBoostApplied = false;
-                jumpButtonPressTime = Time.time;
-            }
-            else if (jumpResult == UnifiedMovementSystem.JumpExecutionResult.Double)
-            {
-                jumpButtonHeld = true;
-                holdBoostCandidate = false;
-                holdBoostApplied = false;
-            }
-        }
-
-        private void OnJumpCanceled(InputAction.CallbackContext context)
-        {
-            jumpButtonHeld = false;
-
-            if (holdBoostCandidate)
-            {
-                holdBoostCandidate = false;
-                movementSystem.CancelHoldBoostCandidate();
-            }
-        }
 
         private void HandleJumpHoldLogic()
         {
@@ -279,14 +295,12 @@ namespace MOBA
 
             if (enabled)
             {
-                moveAction?.Enable();
-                jumpAction?.Enable();
+                // Input System actions are managed automatically
             }
             else
             {
                 moveInput = Vector2.zero;
-                moveAction?.Disable();
-                jumpAction?.Disable();
+                // Input System actions are managed automatically
                 jumpButtonHeld = false;
                 holdBoostCandidate = false;
                 holdBoostApplied = false;
@@ -402,25 +416,54 @@ namespace MOBA
         // Basic Input Actions (existing functionality)
         public void OnMove(InputAction.CallbackContext context)
         {
+            Debug.Log($"[SimplePlayerController] OnMove called: {context.phase}");
             if (context.performed)
             {
                 moveInput = context.ReadValue<Vector2>();
+                Debug.Log($"[SimplePlayerController] Move input: {moveInput}");
             }
             else if (context.canceled)
             {
                 moveInput = Vector2.zero;
+                Debug.Log("[SimplePlayerController] Move input canceled");
             }
         }
 
         public void OnJump(InputAction.CallbackContext context)
         {
+            Debug.Log($"[SimplePlayerController] OnJump called: {context.phase}");
             if (context.started)
             {
-                OnJumpStarted(context);
+                if (!inputActive || isDead)
+                {
+                    return;
+                }
+
+                var jumpResult = movementSystem.TryExecuteJump();
+
+                if (jumpResult == UnifiedMovementSystem.JumpExecutionResult.Initial)
+                {
+                    jumpButtonHeld = true;
+                    holdBoostCandidate = true;
+                    holdBoostApplied = false;
+                    jumpButtonPressTime = Time.time;
+                }
+                else if (jumpResult == UnifiedMovementSystem.JumpExecutionResult.Double)
+                {
+                    jumpButtonHeld = true;
+                    holdBoostCandidate = false;
+                    holdBoostApplied = false;
+                }
             }
             else if (context.canceled)
             {
-                OnJumpCanceled(context);
+                jumpButtonHeld = false;
+
+                if (holdBoostCandidate)
+                {
+                    holdBoostCandidate = false;
+                    movementSystem.CancelHoldBoostCandidate();
+                }
             }
         }
 
@@ -481,14 +524,64 @@ namespace MOBA
         #region General Input Handlers
 
         // General Action Input Handlers
-        public void OnAim(InputAction.CallbackContext context) { }
-        public void OnAttack(InputAction.CallbackContext context) { }
-        public void OnAttackNPC(InputAction.CallbackContext context) { }
+        public void OnAim(InputAction.CallbackContext context) 
+        { 
+            Debug.Log($"[SimplePlayerController] OnAim called: {context.phase}");
+        }
+        
+        public void OnAttack(InputAction.CallbackContext context) 
+        { 
+            // Forward to PlayerAttackSystem
+            var attackSystem = GetComponent<PlayerAttackSystem>();
+            if (attackSystem != null)
+            {
+                if (context.performed)
+                {
+                    attackSystem.OnPrimaryAttackPerformed(context);
+                }
+                else if (context.canceled)
+                {
+                    attackSystem.OnPrimaryAttackCanceled(context);
+                }
+            }
+        }
+        
+        public void OnAttackNPC(InputAction.CallbackContext context) 
+        { 
+            // Forward to PlayerAttackSystem
+            var attackSystem = GetComponent<PlayerAttackSystem>();
+            if (attackSystem != null)
+            {
+                if (context.performed)
+                {
+                    attackSystem.OnNPCAttackPerformed(context);
+                }
+                else if (context.canceled)
+                {
+                    attackSystem.OnNPCAttackCanceled(context);
+                }
+            }
+        }
         public void OnCancel(InputAction.CallbackContext context) { }
         public void OnScore(InputAction.CallbackContext context) { }
         public void OnItem(InputAction.CallbackContext context) { }
         public void OnHome(InputAction.CallbackContext context) { }
-        public void OnChat(InputAction.CallbackContext context) { /* Handled by ChatPingSystem */ }
+        public void OnChat(InputAction.CallbackContext context) 
+        { 
+            // Forward to ChatPingSystem
+            var chatSystem = GetComponent<ChatPingSystem>();
+            if (chatSystem != null)
+            {
+                if (context.performed)
+                {
+                    chatSystem.OnChatInputPerformed(context);
+                }
+                else if (context.canceled)
+                {
+                    chatSystem.OnChatInputCanceled(context);
+                }
+            }
+        }
 
         #endregion
 
